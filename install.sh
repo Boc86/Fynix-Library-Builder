@@ -31,7 +31,8 @@ pip install -r "$INSTALL_DIR/requirements.txt"
 
 # Create .desktop file
 DESKTOP_FILE="$HOME/.local/share/applications/fynix-library-builder.desktop"
-echo "[Desktop Entry]
+cat << EOF > "$DESKTOP_FILE"
+[Desktop Entry]
 Name=Fynix Library Builder
 Exec=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/main.py
 Icon=$INSTALL_DIR/assets/FLB.png
@@ -39,8 +40,10 @@ Terminal=true
 Type=Application
 Categories=AudioVideo;Player;
 Path=$INSTALL_DIR
-" > "$DESKTOP_FILE"
+EOF
 chmod +x "$DESKTOP_FILE"
+
+update-desktop-database ~/.local/share/applications/
 
 echo "Fynix Library Builder installed successfully!"
 echo "You can find it in your application menu."
