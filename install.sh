@@ -33,11 +33,12 @@ pip install -r "$INSTALL_DIR/requirements.txt"
 DESKTOP_FILE="$HOME/.local/share/applications/fynix-library-builder.desktop"
 echo "[Desktop Entry]
 Name=Fynix Library Builder
-Exec=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/main.py
+Exec=bash -c "source $INSTALL_DIR/.venv/bin/activate && python $INSTALL_DIR/main.py"
 Icon=$INSTALL_DIR/assets/FLB.png
 Terminal=false
 Type=Application
 Categories=AudioVideo;Player;
+Path=$INSTALL_DIR
 " > "$DESKTOP_FILE"
 
 echo "Fynix Library Builder installed successfully!"
