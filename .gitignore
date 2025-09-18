@@ -1,0 +1,6 @@
+directories.toml
+/database
+/.venv
+schedule.json
+__pycache__
+GEMINI.md
