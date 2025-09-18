@@ -35,7 +35,7 @@ echo "[Desktop Entry]
 Name=Fynix Library Builder
 Exec=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/main.py
 Icon=$INSTALL_DIR/assets/FLB.png
-Terminal=false
+Terminal=true
 Type=Application
 Categories=AudioVideo;Player;
 Path=$INSTALL_DIR
