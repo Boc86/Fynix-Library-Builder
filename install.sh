@@ -4,7 +4,7 @@
 REPO_URL="https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/main"
 
 # Create installation directory
-INSTALL_DIR="$HOME/.fynix-player"
+INSTALL_DIR="$HOME/.fynix-library-builder"
 mkdir -p "$INSTALL_DIR"
 
 # Download application files
@@ -29,13 +29,10 @@ source "$INSTALL_DIR/.venv/bin/activate"
 # Install dependencies
 pip install -r "$INSTALL_DIR/requirements.txt"
 
-# Setup the database
-python "$INSTALL_DIR/helpers/setupdb.py"
-
 # Create .desktop file
-DESKTOP_FILE="$HOME/.local/share/applications/fynix-player.desktop"
+DESKTOP_FILE="$HOME/.local/share/applications/fynix-library-builder.desktop"
 echo "[Desktop Entry]
-Name=Fynix Player
+Name=Fynix Library Builder
 Exec=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/main.py
 Icon=$INSTALL_DIR/assets/FLB.png
 Terminal=false
@@ -43,5 +40,5 @@ Type=Application
 Categories=AudioVideo;Player;
 " > "$DESKTOP_FILE"
 
-echo "Fynix Player installed successfully!"
+echo "Fynix Library Builder installed successfully!"
 echo "You can find it in your application menu."
