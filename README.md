@@ -15,7 +15,6 @@
 
 - [Features](#features)
 - [How It Works](#how-it-works)
-- [Screenshots](#screenshots)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Technical Overview](#technical-overview)
@@ -40,15 +39,19 @@ These `.strm` files are simple text files that contain a direct URL to the media
 
 This allows you to browse your provider's VOD and series library using the rich interface of a full-fledged media center.
 
-## Screenshots
-
-*(Add screenshots of the main window and setup wizard here)*
-
 ## Installation
+
+**For Linux users:**
+
+```bash
+wget -O - https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/main/install.sh | bash
+```
+
+**Manual Installation:**
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repository-url>
+    git clone https://github.com/Boc86/Fynix-Library-Builder.git
     cd Fynix-Library-Builder
     ```
 
