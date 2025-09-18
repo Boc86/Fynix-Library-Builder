@@ -47,6 +47,12 @@ This allows you to browse your provider's VOD and series library using the rich 
 wget -O - https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/main/install.sh | bash
 ```
 
+**For Windows users (PowerShell):**
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/main/install.ps1" -OutFile "$env:TEMP\install.ps1"; Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File \"$env:TEMP\install.ps1\""
+```
+
 **Manual Installation:**
 
 1.  **Clone the repository:**
