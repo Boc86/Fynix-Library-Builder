@@ -17,12 +17,15 @@ DB_PATH = Path(__file__).parent.parent / "database" / "media_player.db"
 
 def _sanitize_name(name: str) -> str:
     """Sanitizes a string for use as a filename, removing common prefixes, years, and cleaning up."""
-    # Remove 'EN - ' prefix
-    if name.startswith("EN - "):
-        name = name[5:]
+    # Remove prefix up to and including the first ' - '
+    if ' - ' in name:
+        name = name.split(' - ', 1)[1]
 
-    # Remove common quality/resolution prefixes and other tags in brackets/parentheses
-    name = re.sub(r'^(?:4K-D\.-|4K\.-|HD\.-|FHD\.-|SD\.-|4K\s*-\s*|HD\s*-\s*|FHD\s*-\s*|SD\s*-\s*|4K\s*|HD\s*|FHD\s*|SD\s*|\[.*?\]|\(.*?\))\s*', '', name, flags=re.IGNORECASE).strip()
+    # Remove year and other tags in parentheses
+    name = re.sub(r'\s*\([^)]*\)', '', name)
+
+    # Remove common quality/resolution prefixes and other tags in brackets
+    name = re.sub(r'^(?:4K-D\.-|4K\.-|HD\.-|FHD\.-|SD\.-|4K\s*-\s*|HD\s*-\s*|FHD\s*-\s*|SD\s*-\s*|4K\s*|HD\s*|FHD\s*|SD\s*|\[.*?\])\s*', '', name, flags=re.IGNORECASE).strip()
 
     # Replace dots with spaces (assuming dots are separators, not part of the title itself) and handle multiple spaces
     sanitized = re.sub(r'\.+', ' ', name) # Replace one or more dots with a single space
@@ -70,8 +73,10 @@ def _create_nfo_xml(stream_data: dict) -> str:
     # Title and Original Title
     title = stream_data['name'] if 'name' in stream_data else ''
     original_title = stream_data['o_name'] if 'o_name' in stream_data and stream_data['o_name'] else title
-    add_text_element(movie, "title", title)
-    add_text_element(movie, "originaltitle", original_title)
+    sanitized_title = _sanitize_name(title)
+    sanitized_original_title = _sanitize_name(original_title)
+    add_text_element(movie, "title", sanitized_title)
+    add_text_element(movie, "originaltitle", sanitized_original_title)
 
     # Plot/Outline
     plot = stream_data['plot'] if 'plot' in stream_data and stream_data['plot'] else (stream_data['description'] if 'description' in stream_data else '')

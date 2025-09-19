@@ -16,12 +16,15 @@ DB_PATH = Path(__file__).parent.parent / "database" / "media_player.db"
 
 def _sanitize_name(name: str) -> str:
     """Sanitizes a string for use as a filename, removing common prefixes, years, and cleaning up."""
-    # Remove 'EN - ' prefix
-    if name.startswith("EN - "):
-        name = name[5:]
+    # Remove prefix up to and including the first ' - '
+    if ' - ' in name:
+        name = name.split(' - ', 1)[1]
 
-    # Remove common quality/resolution prefixes and other tags in brackets/parentheses
-    name = re.sub(r'^(?:4K-D\.-|4K\.-|HD\.-|FHD\.-|SD\.-|4K\s*-\s*|HD\s*-\s*|FHD\s*-\s*|SD\s*-\s*|4K\s*|HD\s*|FHD\s*|SD\s*|\[.*?\]|\(.*?\))\s*', '', name, flags=re.IGNORECASE).strip()
+    # Remove year and other tags in parentheses
+    name = re.sub(r'\s*\([^)]*\)', '', name)
+
+    # Remove common quality/resolution prefixes and other tags in brackets
+    name = re.sub(r'^(?:4K-D\.-|4K\.-|HD\.-|FHD\.-|SD\.-|4K\s*-\s*|HD\s*-\s*|FHD\s*-\s*|SD\s*-\s*|4K\s*|HD\s*|FHD\s*|SD\s*|\[.*?\])\s*', '', name, flags=re.IGNORECASE).strip()
 
     # Replace dots with spaces (assuming dots are separators, not part of the title itself) and handle multiple spaces
     sanitized = re.sub(r'\.+', ' ', name) # Replace one or more dots with a single space
@@ -68,9 +71,10 @@ def _create_tvshow_nfo_xml(series_data: dict) -> str:
 
     # Title and Original Title
     title = series_data['name'] if 'name' in series_data else ''
-    add_text_element(tvshow, "title", title)
-    add_text_element(tvshow, "originaltitle", title)
-    add_text_element(tvshow, "showtitle", title)
+    sanitized_title = _sanitize_name(title)
+    add_text_element(tvshow, "title", sanitized_title)
+    add_text_element(tvshow, "originaltitle", sanitized_title)
+    add_text_element(tvshow, "showtitle", sanitized_title)
 
     # Plot/Outline
     plot = series_data['plot'] if 'plot' in series_data else ''
@@ -187,8 +191,9 @@ def _create_episodedetails_nfo_xml(episode_data: dict, series_name: str) -> str:
 
     # Title and Showtitle
     title = episode_data['title'] if 'title' in episode_data else ''
+    sanitized_series_name = _sanitize_name(series_name)
     add_text_element(episodedetails, "title", title)
-    add_text_element(episodedetails, "showtitle", series_name)
+    add_text_element(episodedetails, "showtitle", sanitized_series_name)
 
     # Plot/Outline
     plot = episode_data['plot'] if 'plot' in episode_data else ''

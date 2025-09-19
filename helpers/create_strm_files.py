@@ -15,12 +15,15 @@ DB_PATH = Path(__file__).parent.parent / "database" / "media_player.db"
 
 def _sanitize_name(name: str) -> str:
     """Sanitizes a string for use as a filename, removing common prefixes, years, and cleaning up."""
-    # Remove 'EN - ' prefix
-    if name.startswith("EN - "):
-        name = name[5:]
+    # Remove prefix up to and including the first ' - '
+    if ' - ' in name:
+        name = name.split(' - ', 1)[1]
 
-    # Remove common quality/resolution prefixes and other tags in brackets/parentheses
-    name = re.sub(r'^(?:4K-D\.-|4K\.-|HD\.-|FHD\.-|SD\.-|4K\s*-\s*|HD\s*-\s*|FHD\s*-\s*|SD\s*-\s*|4K\s*|HD\s*|FHD\s*|SD\s*|\[.*?\]|\(.*?\))\s*', '', name, flags=re.IGNORECASE).strip()
+    # Remove year and other tags in parentheses
+    name = re.sub(r'\s*\([^)]*\)', '', name)
+
+    # Remove common quality/resolution prefixes and other tags in brackets
+    name = re.sub(r'^(?:4K-D\.-|4K\.-|HD\.-|FHD\.-|SD\.-|4K\s*-\s*|HD\s*-\s*|FHD\s*-\s*|SD\s*-\s*|4K\s*|HD\s*|FHD\s*|SD\s*|\[.*?\])\s*', '', name, flags=re.IGNORECASE).strip()
 
     # Replace dots with spaces (assuming dots are separators, not part of the title itself) and handle multiple spaces
     sanitized = re.sub(r'\.+', ' ', name) # Replace one or more dots with a single space

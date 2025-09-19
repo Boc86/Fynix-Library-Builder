@@ -145,7 +145,7 @@ def create_series_strm_files() -> bool:
                         logger.debug(f"Created .strm file: {strm_filepath}")
                         
                         # Create corresponding .nfo file for the episode
-                        create_single_episode_nfo_file(episode_data, episode_filename_base, current_season_path, series_name)
+                        create_single_episode_nfo_file(episode_data, episode_filename_base, current_season_path, sanitized_series_name)
 
                     except Exception as e:
                         logger.error(f"Error creating .strm file for episode {episode_title} ({episode_id}): {e}")
