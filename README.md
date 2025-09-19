@@ -78,6 +78,9 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Boc86/Fynix-Library-Bu
     ```
     On the first run, you will be guided by the Setup Wizard.
 
+**Update:**
+- Re-run the instalation script and ignore any errors about the virtual environment not being set up as it already exists.
+
 ## Usage
 
 - **Initial Setup**: Follow the wizard to enter your server details and specify where you want your movie and series `.strm` files to be saved.
@@ -107,6 +110,23 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Boc86/Fynix-Library-Bu
 - **Helpers**: The `helpers/` directory contains various scripts for database setup and content synchronization.
 
 ---
+
+## Compatability
+The following have been tested and work, if you use a different system and it works please add to the list
+### Linux
+- Arch Base
+- Mint / Ubuntu
+- Nobara (Fedora)
+
+### Window Manager
+- Hyprland
+- KDE Plasma
+- XFCE **if the app fails to launch ensure libxc-cursor-dev is installed from your package manager** 
+
+---
+
+### Windows
+- Untested, needs verification
 
 ## License
 
