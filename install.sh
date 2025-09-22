@@ -1,45 +1,28 @@
 #!/bin/bash
 
-# Define GitHub repository URL
-REPO_URL="https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/main"
+# Store the directory where the script is being executed
+SCRIPT_DIR="$(pwd)"
 
-# Create installation directory
-INSTALL_DIR="$HOME/.fynix-library-builder"
-mkdir -p "$INSTALL_DIR"
+# Clone the Fynix Library Builder repository
+git clone https://github.com/fynixmedia/Fynix-Library-Builder.git
 
-# Download application files
-wget -O "$INSTALL_DIR/main.py" "$REPO_URL/main.py"
-wget -O "$INSTALL_DIR/backend.py" "$REPO_URL/backend.py"
-wget -O "$INSTALL_DIR/requirements.txt" "$REPO_URL/requirements.txt"
+# Navigate into the cloned directory
+cd Fynix-Library-Builder
 
-cp -r helpers/ "$INSTALL_DIR/"
+# Check if helpers/ directory exists in the cloned repository
+if [ ! -d "helpers" ]; then
+    echo "Warning: 'helpers/' directory not found in the cloned repository."
+    # Check if helpers/ exists in the original script execution directory
+    if [ -d "${SCRIPT_DIR}/helpers" ]; then
+        echo "Copying 'helpers/' from original directory: ${SCRIPT_DIR}/helpers"
+        cp -r "${SCRIPT_DIR}/helpers" .
+    else
+        echo "Error: 'helpers/' directory not found locally either. Please ensure it's in the repository or available in the script's execution path."
+        exit 1
+    fi
+fi
 
-# Create and download assets directory
-mkdir -p "$INSTALL_DIR/assets"
-wget -O "$INSTALL_DIR/assets/FLB.png" "$REPO_URL/assets/FLB.png"
-
-# Create and activate virtual environment
-python3 -m venv "$INSTALL_DIR/.venv"
-source "$INSTALL_DIR/.venv/bin/activate"
-
-# Install dependencies
-pip install -r "$INSTALL_DIR/requirements.txt"
-
-# Create .desktop file
-DESKTOP_FILE="$HOME/.local/share/applications/fynix-library-builder.desktop"
-cat << EOF > "$DESKTOP_FILE"
-[Desktop Entry]
-Name=Fynix Library Builder
-Exec=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/main.py
-Icon=$INSTALL_DIR/assets/FLB.png
-Terminal=false
-Type=Application
-Categories=AudioVideo;Player;
-Path=$INSTALL_DIR
-EOF
-chmod +x "$DESKTOP_FILE"
-
-update-desktop-database ~/.local/share/applications/
+# Install Python dependencies
+pip install -r requirements.txt
 
 echo "Fynix Library Builder installed successfully!"
-echo "You can find it in your application menu."
