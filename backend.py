@@ -17,6 +17,8 @@ import helpers.vacuumdb as vacuumdb
 import helpers.config_manager as config_manager
 import helpers.create_strm_files as create_strm_files
 import helpers.create_series_strm_files as create_series_strm_files
+import helpers.updatelive as updatelive
+import helpers.defaultepggrabber as defaultepggrabber
 
 # --- Constants ---
 CURRENT_DIR = os.getcwd()
@@ -60,6 +62,112 @@ def load_schedule():
 def database_exists():
     """Checks if the database file exists."""
     return os.path.exists(DB_FILEPATH)
+
+def check_for_missing_tables():
+    """Checks if 'live_streams' or 'epg_data' tables are missing from the database."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('live_streams', 'epg_data');")
+        existing_tables = [row[0] for row in cursor.fetchall()]
+        
+        missing_tables = []
+        if 'live_streams' not in existing_tables:
+            missing_tables.append('live_streams')
+        if 'epg_data' not in existing_tables:
+            missing_tables.append('epg_data')
+            
+        return len(missing_tables) > 0
+    except sqlite3.Error as e:
+        logging.error(f"Error checking for missing tables: {e}")
+        return False # Assume tables are not missing to prevent accidental migration on error
+    finally:
+        if conn:
+            conn.close()
+
+def migrate_database(progress_callback=None):
+    """Adds 'live_streams' and 'epg_data' tables to the database if they don't exist."""
+    if progress_callback:
+        progress_callback("Starting database migration...")
+    
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+
+        live_streams_sql = '''
+            CREATE TABLE IF NOT EXISTS live_streams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id INTEGER NOT NULL,
+                category_id INTEGER,
+                stream_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                stream_type TEXT DEFAULT 'live',
+                stream_icon TEXT,
+                epg_channel_id TEXT,
+                tv_archive INTEGER DEFAULT 0,
+                direct_source TEXT,
+                tv_archive_duration INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE,
+                FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE SET NULL,
+                UNIQUE(server_id, stream_id)
+            )
+        '''
+        epg_data_sql = '''
+            CREATE TABLE IF NOT EXISTS epg_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                start_time TIMESTAMP NOT NULL,
+                stop_time TIMESTAMP NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                lang TEXT,
+                category TEXT,
+                icon TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(channel_id, start_time, title)
+            )
+        '''
+        
+        logging.info("Creating table: live_streams")
+        cursor.execute(live_streams_sql)
+        logging.info("Creating table: epg_data")
+        cursor.execute(epg_data_sql)
+
+        # Create indexes for better performance
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_live_server_category ON live_streams(server_id, category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_live_name ON live_streams(name)",
+            "CREATE INDEX IF NOT EXISTS idx_live_epg_channel ON live_streams(epg_channel_id)",
+            "CREATE INDEX IF NOT EXISTS idx_epg_channel_time ON epg_data(channel_id, start_time)",
+            "CREATE INDEX IF NOT EXISTS idx_epg_time_range ON epg_data(start_time, stop_time)",
+        ]
+        
+        for index_sql in indexes:
+            try:
+                cursor.execute(index_sql)
+                logging.debug(f"Created index: {index_sql.split('idx_')[1].split(' ON')[0]}")
+            except sqlite3.Error as e:
+                logging.warning(f"Index creation warning: {e}")
+
+        conn.commit()
+        if progress_callback:
+            progress_callback("Database migration completed successfully!")
+        logging.info("Database migration completed successfully!")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Error during database migration: {e}")
+        if progress_callback:
+            progress_callback(f"Database migration failed: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 # --- Database Interaction Functions ---
 def get_servers():
@@ -181,6 +289,8 @@ def run_initial_setup(server_details, movie_path, series_path, progress_callback
         ("Saving library folder configurations", lambda: config_manager.save_directories(movie_path, series_path)),
         ("Adding server information", lambda: addserver.add_iptv_server(DB_FILEPATH, server_name, server_url, server_username, server_password, server_port)),
         ("Updating categories", updatecats.main),
+        ("Updating live streams", updatelive.main),
+        ("Grabbing EPG data", defaultepggrabber.main),
         ("Updating movies", updatemovies.main),
         ("Updating series", updateseries.main),
         ("Updating movie metadata", updatemoviemetadata.main),
@@ -204,21 +314,36 @@ def run_initial_setup(server_details, movie_path, series_path, progress_callback
     return True
 
 def run_library_update(progress_callback):
-    """Creates .strm files for movies and series."""
-    progress_callback("Updating library...")
-    try:
-        if not create_strm_files.main():
-            raise Exception("Creating movie .strm files failed.")
-        
-        if not create_series_strm_files.main():
-            raise Exception("Creating series .strm files failed.")
-            
-        progress_callback("Library update complete!")
-        return True
-    except Exception as e:
-        logging.error(f"Error during library update: {e}")
-        progress_callback(f"Update failed: {e}")
-        return False
+    """Runs the full library update process."""
+    progress_callback("Starting library update...")
+
+    scripts_to_run = [
+        ("Updating categories", updatecats.main),
+        ("Updating live streams", updatelive.main),
+        ("Grabbing EPG data", defaultepggrabber.main),
+        ("Updating movies", updatemovies.main),
+        ("Updating series", updateseries.main),
+        ("Updating movie metadata", updatemoviemetadata.main),
+        ("Updating series metadata", updateseriesmetadata.main),
+        ("Creating movie .strm files", create_strm_files.main),
+        ("Creating series .strm files", create_series_strm_files.main),
+        ("Vacuuming database", vacuumdb.vacuum_database),
+    ]
+
+    for description, script_func in scripts_to_run:
+        progress_callback(f"{description}... ")
+        try:
+            if not script_func():
+                raise Exception(f"{description} failed.")
+            progress_callback("DONE\n")
+        except Exception as e:
+            error_message = f"FAILED: {e}\n"
+            progress_callback(error_message)
+            logging.error(f"Failed during {description}: {e}")
+            return False
+    
+    progress_callback("Library update completed successfully!")
+    return True
 
 def run_clear_cache(progress_callback):
     """Clears all cached metadata."""

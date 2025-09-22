@@ -66,6 +66,27 @@ class MediaPlayerDB:
                 )
             ''',
             
+            'live_streams': '''
+                CREATE TABLE IF NOT EXISTS live_streams (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    server_id INTEGER NOT NULL,
+                    category_id INTEGER,
+                    stream_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    stream_type TEXT DEFAULT 'live',
+                    stream_icon TEXT,
+                    epg_channel_id TEXT,
+                    tv_archive INTEGER DEFAULT 0,
+                    direct_source TEXT,
+                    tv_archive_duration INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE,
+                    FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE SET NULL,
+                    UNIQUE(server_id, stream_id)
+                )
+            ''',
+            
             'vod_streams': '''
                 CREATE TABLE IF NOT EXISTS vod_streams (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,6 +176,34 @@ class MediaPlayerDB:
                     direct_source TEXT,
                     season INTEGER
                 )
+            ''',
+            
+            'epg_data': '''
+                CREATE TABLE IF NOT EXISTS epg_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id TEXT NOT NULL,
+                    start_time TIMESTAMP NOT NULL,
+                    stop_time TIMESTAMP NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    lang TEXT,
+                    category TEXT,
+                    icon TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(channel_id, start_time, title)
+                )
+            ''',
+            
+            'user_preferences': '''
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT DEFAULT 'default',
+                    preference_key TEXT NOT NULL,
+                    preference_value TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, preference_key)
+                )
             '''
         }
         
@@ -181,6 +230,11 @@ class MediaPlayerDB:
         """Create indexes for better query performance"""
         
         indexes = [
+            # Live streams indexes
+            "CREATE INDEX IF NOT EXISTS idx_live_server_category ON live_streams(server_id, category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_live_name ON live_streams(name)",
+            "CREATE INDEX IF NOT EXISTS idx_live_epg_channel ON live_streams(epg_channel_id)",
+            
             # VOD streams indexes  
             "CREATE INDEX IF NOT EXISTS idx_vod_server_category ON vod_streams(server_id, category_id)",
             "CREATE INDEX IF NOT EXISTS idx_vod_name ON vod_streams(name)",
@@ -201,6 +255,11 @@ class MediaPlayerDB:
             # Categories indexes
             "CREATE INDEX IF NOT EXISTS idx_categories_server_type ON categories(server_id, content_type)",
             "CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id)",
+            
+            # EPG indexes
+            "CREATE INDEX IF NOT EXISTS idx_epg_channel_time ON epg_data(channel_id, start_time)",
+            "CREATE INDEX IF NOT EXISTS idx_epg_time_range ON epg_data(start_time, stop_time)",
+            
         ]
         
         for index_sql in indexes:

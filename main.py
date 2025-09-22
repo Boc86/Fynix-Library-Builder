@@ -144,6 +144,13 @@ class FynixPlayerWindow(QMainWindow):
 
             self.server_editors[server_id] = editors
 
+            # Add Migrate DB button if tables are missing
+            if backend.check_for_missing_tables():
+                self.migrate_db_button = QPushButton("Migrate DB")
+                self.migrate_db_button.setToolTip("Adds missing database tables (live_streams, epg_data).")
+                self.migrate_db_button.clicked.connect(self.migrate_db)
+                layout.addWidget(self.migrate_db_button)
+
         return group
 
     def build_category_editor(self, title, content_type, description):
@@ -303,11 +310,6 @@ class FynixPlayerWindow(QMainWindow):
     def run_clear_cache(self):
         self.run_task(backend.run_clear_cache)
 
-    def set_buttons_enabled(self, enabled):
-        self.save_button.setEnabled(enabled)
-        self.update_library_button.setEnabled(enabled)
-        self.clear_cache_button.setEnabled(enabled)
-
     @Slot(str)
     def update_status(self, message):
         self.status_label.setText(message)
@@ -321,10 +323,23 @@ class FynixPlayerWindow(QMainWindow):
             self.status_label.setText("Task completed successfully.")
             self.statusBar().showMessage("Success!", 3000)
             self.update_statistics_ui()
+            # After migration, hide the button if successful
+            if hasattr(self, 'migrate_db_button') and self.migrate_db_button.isVisible():
+                self.migrate_db_button.hide()
         else:
             self.status_label.setText("Task failed. Check logs.")
         self.thread = None
         self.worker = None
+
+    def migrate_db(self):
+        self.run_task(backend.migrate_database)
+
+    def set_buttons_enabled(self, enabled):
+        self.save_button.setEnabled(enabled)
+        self.update_library_button.setEnabled(enabled)
+        self.clear_cache_button.setEnabled(enabled)
+        if hasattr(self, 'migrate_db_button'):
+            self.migrate_db_button.setEnabled(enabled)
 
 # --- Initial Setup Wizard ---
 class SetupWizard(QWizard):
