@@ -18,18 +18,7 @@ Invoke-WebRequest -Uri "$REPO_URL/main.py" -OutFile (Join-Path $INSTALL_DIR "mai
 Invoke-WebRequest -Uri "$REPO_URL/backend.py" -OutFile (Join-Path $INSTALL_DIR "backend.py")
 Invoke-WebRequest -Uri "$REPO_URL/requirements.txt" -OutFile (Join-Path $INSTALL_DIR "requirements.txt")
 
-Write-Host "Downloading helpers..."
-$HELPERS_DIR = Join-Path $INSTALL_DIR "helpers"
-New-Item -ItemType Directory -Path $HELPERS_DIR -Force | Out-Null
-$helperFiles = @(
-    "addserver.py", "cache_checker.py", "cleanmovies.py", "cleanseries.py", "clear_cache.py",
-    "config_manager.py", "create_nfo_files.py", "create_series_nfo_files.py", "create_series_strm_files.py",
-    "create_strm_files.py", "scheduled_update.py", "setupdb.py", "updatecats.py",
-    "updatemoviemetadata.py", "updatemovies.py", "updateseries.py", "updateseriesmetadata.py", "vacuumdb.py"
-)
-foreach ($file in $helperFiles) {
-    Invoke-WebRequest -Uri "$REPO_URL/helpers/$file" -OutFile (Join-Path $HELPERS_DIR $file)
-}
+Copy-Item -Path "helpers" -Destination "$installDir" -Recurse -Force
 
 Write-Host "Downloading assets..."
 $ASSETS_DIR = Join-Path $INSTALL_DIR "assets"

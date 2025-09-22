@@ -12,11 +12,7 @@ wget -O "$INSTALL_DIR/main.py" "$REPO_URL/main.py"
 wget -O "$INSTALL_DIR/backend.py" "$REPO_URL/backend.py"
 wget -O "$INSTALL_DIR/requirements.txt" "$REPO_URL/requirements.txt"
 
-# Create and download helpers directory
-mkdir -p "$INSTALL_DIR/helpers"
-for file in addserver.py cache_checker.py cleanmovies.py cleanseries.py clear_cache.py config_manager.py create_nfo_files.py create_series_nfo_files.py create_series_strm_files.py create_strm_files.py scheduled_update.py setupdb.py updatecats.py updatemoviemetadata.py updatemovies.py updateseries.py updateseriesmetadata.py vacuumdb.py; do
-    wget -O "$INSTALL_DIR/helpers/$file" "$REPO_URL/helpers/$file"
-done
+cp -r helpers/ "$INSTALL_DIR/"
 
 # Create and download assets directory
 mkdir -p "$INSTALL_DIR/assets"
