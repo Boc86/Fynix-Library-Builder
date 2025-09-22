@@ -279,7 +279,7 @@ class XtreamLiveStreamsDownloader:
 
 def main():
     downloader = XtreamLiveStreamsDownloader(cache_hours=24)
-    downloader.download_all_streams()
+    return downloader.download_all_streams()
 
 
 if __name__ == "__main__":

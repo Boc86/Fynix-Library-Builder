@@ -169,6 +169,57 @@ def migrate_database(progress_callback=None):
         if conn:
             conn.close()
 
+def check_live_streams_visible_column_exists():
+    """Checks if the 'visible' column exists in the 'live_streams' table."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(live_streams);")
+        columns = [row[1] for row in cursor.fetchall()]
+        return 'visible' in columns
+    except sqlite3.Error as e:
+        logging.error(f"Error checking 'visible' column in 'live_streams': {e}")
+        return True # Assume it exists to avoid accidental migration
+    finally:
+        if conn:
+            conn.close()
+
+def migrate_add_visible_column_to_live_streams(progress_callback=None):
+    """Adds the 'visible' column to the 'live_streams' table if it doesn't exist."""
+    if progress_callback:
+        progress_callback("Checking for 'visible' column in 'live_streams' table...")
+    
+    if check_live_streams_visible_column_exists():
+        if progress_callback:
+            progress_callback("'visible' column already exists.")
+        return True
+
+    if progress_callback:
+        progress_callback("Adding 'visible' column to 'live_streams' table...")
+
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+        cursor.execute("ALTER TABLE live_streams ADD COLUMN visible INTEGER DEFAULT 1;")
+        conn.commit()
+        if progress_callback:
+            progress_callback("'visible' column added successfully!")
+        logging.info("'visible' column added successfully to 'live_streams' table.")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Error adding 'visible' column: {e}")
+        if progress_callback:
+            progress_callback(f"Failed to add 'visible' column: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
 # --- Database Interaction Functions ---
 def get_servers():
     """Retrieves all servers from the database."""

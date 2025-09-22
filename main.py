@@ -96,6 +96,12 @@ class FynixPlayerWindow(QMainWindow):
         self.update_statistics_ui() # Initial update
         self.load_and_set_schedule() # Load schedule and start timer
 
+        # Run database migrations
+        if backend.check_for_missing_tables():
+            self.run_task(backend.migrate_database)
+        if not backend.check_live_streams_visible_column_exists():
+            self.run_task(backend.migrate_add_visible_column_to_live_streams)
+
     def closeEvent(self, event):
         event.ignore()
         self.hide()

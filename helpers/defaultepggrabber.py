@@ -168,7 +168,8 @@ def main():
     row = cursor.fetchone()
     if not row:
         logger.error("No active server found in database.")
-        return
+        conn.close()
+        return False
 
     server = dict(row)
     url = build_epg_url(server)
@@ -176,7 +177,8 @@ def main():
 
     if not test_server_connection(url):
         logger.error("Server not reachable. Aborting EPG download.")
-        return
+        conn.close()
+        return False
 
     cache_key = _generate_cache_key(url)
     xml_data = _load_from_cache(cache_key)
@@ -186,18 +188,21 @@ def main():
         xml_data = fetch_epg_xml(url)
         if not xml_data:
             logger.error("No EPG XML downloaded.")
-            return
+            conn.close()
+            return False
         _save_to_cache(cache_key, xml_data)
         logger.info(f"Downloaded and cached EPG XML for URL: {url}")
 
     epg_entries = parse_epg_xml(xml_data)
     if not epg_entries:
         logger.error("No EPG entries parsed.")
-        return
+        conn.close()
+        return False
 
     insert_epg_entries(conn, epg_entries)
     conn.close()
     logger.info("EPG import completed.")
+    return True
 
 
 if __name__ == "__main__":

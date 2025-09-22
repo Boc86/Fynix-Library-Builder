@@ -150,9 +150,9 @@ class XtreamSeriesDownloader:
         mapping = {}
         try:
             cursor = self.conn.cursor()
-            cursor.execute("SELECT id, xtream_id FROM categories WHERE server_id = ?", (server_id,))
+            cursor.execute("SELECT id, category_id FROM categories WHERE server_id = ? AND content_type = 'series'", (server_id,))
             rows = cursor.fetchall()
-            mapping = {row['xtream_id']: row['id'] for row in rows if row['xtream_id'] is not None}
+            mapping = {row['category_id']: row['id'] for row in rows if row['category_id'] is not None}
         except sqlite3.Error as e:
             logger.error(f"Error fetching category mapping for server {server_id}: {e}")
         return mapping
@@ -179,8 +179,9 @@ class XtreamSeriesDownloader:
             rating = float(series_data.get('rating', 0.0)) if series_data.get('rating') else 0.0
             release_date = series_data.get('releaseDate', '')
             last_modified = series_data.get('last_modified', '')
-            xtream_category_id = series_data.get('category_id', None)
-            category_id = category_mapping.get(xtream_category_id) if xtream_category_id else None
+            xtream_category_id_str = series_data.get('category_id')
+            xtream_category_id = int(xtream_category_id_str) if xtream_category_id_str else None
+            category_id = category_mapping.get(xtream_category_id) if xtream_category_id is not None else None
 
             cursor.execute("""
                 INSERT INTO series (
