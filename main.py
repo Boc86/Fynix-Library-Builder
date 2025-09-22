@@ -4,7 +4,8 @@ from datetime import datetime, time
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QGroupBox, QLineEdit, QPushButton, QScrollArea, QCheckBox, QTimeEdit,
-    QWizard, QWizardPage, QLabel, QPlainTextEdit, QSizePolicy, QSystemTrayIcon, QMenu
+    QWizard, QWizardPage, QLabel, QPlainTextEdit, QSizePolicy, QSystemTrayIcon, QMenu, QTabWidget,
+    QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import QThread, QObject, Signal, Slot, Qt, QTime, QTimer
 from PySide6.QtGui import QPalette, QColor, QPixmap, QIcon, QAction
@@ -18,6 +19,7 @@ class Worker(QObject):
         super().__init__()
         self.task_func = task_func
         self.args = args
+        self.exception_info = None # New attribute to store exception details
 
     @Slot()
     def run(self):
@@ -25,7 +27,9 @@ class Worker(QObject):
             success = self.task_func(*self.args, progress_callback=self.progress.emit)
             self.finished.emit(success)
         except Exception as e:
-            self.progress.emit(f"An error occurred: {e}")
+            import traceback
+            self.exception_info = traceback.format_exc() # Store full traceback
+            self.progress.emit(f"An error occurred: {e}") # Still emit a short message
             self.finished.emit(False)
 
 # --- Main Application Window ---
@@ -37,8 +41,11 @@ class FynixPlayerWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self.category_checkboxes = []
+        self.live_category_checkboxes = {}
+        self.live_channel_checkboxes = {}
         self.server_editors = {}
         self.last_auto_update_date = None
+        self.process_live_tv_checkbox = None # Initialize to None
 
         # --- System Tray Icon ---
         self.tray_icon = QSystemTrayIcon(self)
@@ -54,10 +61,31 @@ class FynixPlayerWindow(QMainWindow):
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
         self.tray_icon.show()
 
-        # Central widget and layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
+        # --- Tab Widget ---
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        # --- Dashboard Tab ---
+        dashboard_tab = self.build_dashboard_tab()
+        self.tabs.addTab(dashboard_tab, "Dashboard")
+        self.load_preferences() # New call to load preferences
+
+        # --- Live Channels Tab ---
+        live_channels_tab = self.build_live_channels_tab()
+        self.tabs.addTab(live_channels_tab, "Live Channels")
+
+        self.update_statistics_ui() # Initial update
+        self.load_and_set_schedule() # Load schedule and start timer
+
+        # Run database migrations
+        if backend.check_for_missing_tables():
+            self.run_task(backend.migrate_database)
+        if not backend.check_live_streams_visible_column_exists():
+            self.run_task(backend.migrate_add_visible_column_to_live_streams)
+
+    def build_dashboard_tab(self):
+        dashboard_widget = QWidget()
+        main_layout = QHBoxLayout(dashboard_widget)
 
         # Left column
         left_column = QVBoxLayout()
@@ -90,17 +118,127 @@ class FynixPlayerWindow(QMainWindow):
         # Category Editors
         vod_editor = self.build_category_editor("VOD Categories", "vod", "Select VOD categories to include in your library.")
         series_editor = self.build_category_editor("Series Categories", "series", "Select series categories to include in your library.")
+        right_column.addWidget(self.build_directory_settings_box()) # New section
         right_column.addWidget(vod_editor)
         right_column.addWidget(series_editor)
+        
+        return dashboard_widget
 
-        self.update_statistics_ui() # Initial update
-        self.load_and_set_schedule() # Load schedule and start timer
+    def build_live_channels_tab(self):
+        live_channels_widget = QWidget()
+        main_layout = QHBoxLayout(live_channels_widget)
 
-        # Run database migrations
-        if backend.check_for_missing_tables():
-            self.run_task(backend.migrate_database)
-        if not backend.check_live_streams_visible_column_exists():
-            self.run_task(backend.migrate_add_visible_column_to_live_streams)
+        # Left side: Categories
+        categories_group = QGroupBox("Live Categories")
+        categories_layout = QVBoxLayout(categories_group)
+        self.live_categories_list = QListWidget()
+        self.live_categories_list.itemClicked.connect(self.populate_live_channels)
+        categories_layout.addWidget(self.live_categories_list)
+
+        # Buttons for Live Categories
+        category_buttons_layout = QHBoxLayout()
+        select_all_cat_button = QPushButton("Select All")
+        select_all_cat_button.clicked.connect(self.select_all_live_categories)
+        category_buttons_layout.addWidget(select_all_cat_button)
+
+        deselect_all_cat_button = QPushButton("Deselect All")
+        deselect_all_cat_button.clicked.connect(self.deselect_all_live_categories)
+        category_buttons_layout.addWidget(deselect_all_cat_button)
+        categories_layout.addLayout(category_buttons_layout)
+        
+        # Populate categories
+        live_categories = backend.get_live_categories()
+        for category in live_categories:
+            item = QListWidgetItem(self.live_categories_list)
+            checkbox = QCheckBox(category['category_name'])
+            checkbox.setChecked(bool(category['visible']))
+            item.setSizeHint(checkbox.sizeHint())
+            self.live_categories_list.setItemWidget(item, checkbox)
+            # Store a reference to the item and its corresponding category ID
+            self.live_category_checkboxes[category['id']] = (item, checkbox, category['category_id'])
+
+
+        # Right side: Channels
+        channels_group = QGroupBox("Live Channels")
+        channels_layout = QVBoxLayout(channels_group)
+        
+        self.live_channels_list = QListWidget()
+        channels_layout.addWidget(self.live_channels_list)
+
+        buttons_layout = QHBoxLayout()
+        select_all_button = QPushButton("Select All")
+        select_all_button.clicked.connect(self.select_all_live_channels)
+        buttons_layout.addWidget(select_all_button)
+
+        deselect_all_button = QPushButton("Deselect All")
+        deselect_all_button.clicked.connect(self.deselect_all_live_channels)
+        buttons_layout.addWidget(deselect_all_button)
+        
+        channels_layout.addLayout(buttons_layout)
+
+        save_button = QPushButton("Save Live Channel Changes")
+        save_button.clicked.connect(self.save_live_channel_changes)
+        channels_layout.addWidget(save_button)
+
+        main_layout.addWidget(categories_group)
+        main_layout.addWidget(channels_group)
+
+        return live_channels_widget
+
+    def populate_live_channels(self, item):
+        # Find the category ID associated with the clicked item
+        provider_category_id = None
+        for cat_id, (list_item, checkbox, p_cat_id) in self.live_category_checkboxes.items():
+            if list_item == item:
+                provider_category_id = p_cat_id
+                break
+        
+        if provider_category_id is None:
+            return
+
+        self.live_channels_list.clear()
+        self.live_channel_checkboxes.clear()
+        
+        streams = backend.get_live_streams_by_category(provider_category_id)
+        for stream in streams:
+            list_item = QListWidgetItem(self.live_channels_list)
+            checkbox = QCheckBox(stream['name'])
+            checkbox.setChecked(bool(stream['visible']))
+            list_item.setSizeHint(checkbox.sizeHint())
+            self.live_channels_list.setItemWidget(list_item, checkbox)
+            self.live_channel_checkboxes[stream['id']] = checkbox
+
+    def select_all_live_channels(self):
+        for checkbox in self.live_channel_checkboxes.values():
+            checkbox.setChecked(True)
+
+    def deselect_all_live_channels(self):
+        for checkbox in self.live_channel_checkboxes.values():
+            checkbox.setChecked(False)
+
+    def select_all_live_categories(self):
+        for cat_id, (list_item, checkbox, p_cat_id) in self.live_category_checkboxes.items():
+            checkbox.setChecked(True)
+
+    def deselect_all_live_categories(self):
+        for cat_id, (list_item, checkbox, p_cat_id) in self.live_category_checkboxes.items():
+            checkbox.setChecked(False)
+
+    def save_live_channel_changes(self):
+        # Save category visibility
+        for cat_id, (list_item, checkbox, provider_category_id) in self.live_category_checkboxes.items():
+            backend.update_category_visibility(cat_id, 1 if checkbox.isChecked() else 0)
+
+        # Save channel visibility
+        stream_ids_to_hide = [stream_id for stream_id, checkbox in self.live_channel_checkboxes.items() if not checkbox.isChecked()]
+        stream_ids_to_show = [stream_id for stream_id, checkbox in self.live_channel_checkboxes.items() if checkbox.isChecked()]
+        
+        if stream_ids_to_hide:
+            backend.batch_update_live_stream_visibility(stream_ids_to_hide, 0)
+        if stream_ids_to_show:
+            backend.batch_update_live_stream_visibility(stream_ids_to_show, 1)
+        
+        self.statusBar().showMessage("Live channel visibility changes saved!", 5000)
 
     def closeEvent(self, event):
         event.ignore()
@@ -119,6 +257,33 @@ class FynixPlayerWindow(QMainWindow):
                 self.show()
             else:
                 self.hide()
+
+    def load_preferences(self):
+        # Load the state of the "Process Live TV" checkbox
+        # Default to True if not set, so live TV processing is enabled by default
+        process_live_tv_enabled = backend.load_preference("process_live_tv", True)
+        if self.process_live_tv_checkbox: # Check if the widget has been created
+            self.process_live_tv_checkbox.setChecked(process_live_tv_enabled)
+
+    def build_directory_settings_box(self):
+        group = QGroupBox("Library Directory Settings")
+        layout = QFormLayout(group)
+
+        self.movie_path_editor = QLineEdit()
+        self.series_path_editor = QLineEdit()
+        self.live_tv_path_editor = QLineEdit()
+
+        layout.addRow("Movie Library Path:", self.movie_path_editor)
+        layout.addRow("Series Library Path:", self.series_path_editor)
+        layout.addRow("Live TV Library Path:", self.live_tv_path_editor)
+
+        # Load current paths
+        paths = backend.config_manager.load_directories()
+        self.movie_path_editor.setText(paths.get('movies', ''))
+        self.series_path_editor.setText(paths.get('series', ''))
+        self.live_tv_path_editor.setText(paths.get('live_tv', '')) # Assuming 'live_tv' key
+
+        return group
 
     def build_server_editor(self):
         group = QGroupBox("Server Configuration")
@@ -204,6 +369,11 @@ class FynixPlayerWindow(QMainWindow):
         self.clear_cache_button.setToolTip("Clears all cached metadata. Use if images or text are outdated.")
         self.clear_cache_button.clicked.connect(self.run_clear_cache)
         layout.addWidget(self.clear_cache_button)
+
+        # New checkbox for Live TV processing
+        self.process_live_tv_checkbox = QCheckBox("Process Live TV")
+        self.process_live_tv_checkbox.setToolTip("Include live streams and EPG data in library updates.")
+        layout.addWidget(self.process_live_tv_checkbox)
         
         self.status_label = QLabel("Ready.")
         layout.addWidget(self.status_label)
@@ -261,11 +431,22 @@ class FynixPlayerWindow(QMainWindow):
         for cat_id, checkbox in self.category_checkboxes:
             backend.update_category_visibility(cat_id, 1 if checkbox.isChecked() else 0)
         
+        # Save directory paths
+        backend.config_manager.save_directories(
+            self.movie_path_editor.text(),
+            self.series_path_editor.text(),
+            self.live_tv_path_editor.text()
+        )
+
         # Save schedule
         backend.save_schedule(
             self.schedule_checkbox.isChecked(),
             self.schedule_time_edit.time().toString("HH:mm")
         )
+
+        # Save "Process Live TV" preference
+        if self.process_live_tv_checkbox:
+            backend.save_preference("process_live_tv", self.process_live_tv_checkbox.isChecked())
 
         self.statusBar().showMessage("All changes saved successfully!", 5000)
         self.status_label.setText("Changes saved.")
@@ -311,7 +492,10 @@ class FynixPlayerWindow(QMainWindow):
         self.thread.start()
 
     def run_library_update(self):
-        self.run_task(backend.run_library_update)
+        process_live_tv = False
+        if self.process_live_tv_checkbox:
+            process_live_tv = self.process_live_tv_checkbox.isChecked()
+        self.run_task(backend.run_library_update, process_live_tv)
 
     def run_clear_cache(self):
         self.run_task(backend.run_clear_cache)
@@ -332,8 +516,18 @@ class FynixPlayerWindow(QMainWindow):
             # After migration, hide the button if successful
             if hasattr(self, 'migrate_db_button') and self.migrate_db_button.isVisible():
                 self.migrate_db_button.hide()
+            
+            # Update last_auto_update_date if the task was a library update
+            # This prevents immediate re-triggering if the app is kept open
+            # and the scheduled time is still in the past for the current day.
+            if self.worker and self.worker.task_func == backend.run_library_update:
+                self.last_auto_update_date = datetime.now().date()
         else:
-            self.status_label.setText("Task failed. Check logs.")
+            error_message = "Task failed. Check logs."
+            if self.worker and self.worker.exception_info: # Check if exception info is available
+                error_message = f"Task failed: {self.worker.exception_info}"
+                print(f"ERROR: {error_message}", file=sys.stderr) # Print to stderr as well
+            self.status_label.setText(error_message)
         self.thread = None
         self.worker = None
 
@@ -398,15 +592,18 @@ class SetupWizard(QWizard):
     def create_folders_page(self):
         page = QWizardPage()
         page.setTitle("Library Folders")
-        page.setSubTitle("Select the folders where your movie and series .strm files will be saved.")
+        page.setSubTitle("Select the folders where your movie, series, and live TV .strm files will be saved.")
         layout = QVBoxLayout(page)
         self.movie_folder_entry = QLineEdit()
         self.series_folder_entry = QLineEdit()
+        self.live_tv_folder_entry = QLineEdit() # New line for Live TV folder
         # In a real app, these would be folder selection dialogs
         layout.addWidget(QLabel("Movie Library Path:"))
         layout.addWidget(self.movie_folder_entry)
         layout.addWidget(QLabel("Series Library Path:"))
         layout.addWidget(self.series_folder_entry)
+        layout.addWidget(QLabel("Live TV Library Path:")) # New label
+        layout.addWidget(self.live_tv_folder_entry) # New widget
         return page
 
     def create_confirm_page(self):
@@ -431,9 +628,10 @@ class SetupWizard(QWizard):
         )
         movie_path = self.movie_folder_entry.text()
         series_path = self.series_folder_entry.text()
+        live_tv_path = self.live_tv_folder_entry.text() # New line for Live TV path
 
         self.thread = QThread()
-        self.worker = Worker(backend.run_initial_setup, server_details, movie_path, series_path)
+        self.worker = Worker(backend.run_initial_setup, server_details, movie_path, series_path, live_tv_path) # Added live_tv_path
         self.worker.moveToThread(self.thread)
         self.worker.progress.connect(self.update_progress_text)
         self.thread.started.connect(self.worker.run)

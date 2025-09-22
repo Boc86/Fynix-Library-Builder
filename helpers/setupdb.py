@@ -83,7 +83,6 @@ class MediaPlayerDB:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     visible INTEGER DEFAULT 1,
                     FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE,
-                    FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE SET NULL,
                     UNIQUE(server_id, stream_id)
                 )
             ''',

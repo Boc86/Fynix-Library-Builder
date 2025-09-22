@@ -3,6 +3,7 @@ import requests
 import logging
 import time
 import pickle
+import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -121,7 +122,7 @@ def normalize_value(value, key):
         return ''
     return value
 
-def update_movie(db_path, stream_id, metadata):
+def update_movie(db_path, stream_id, metadata, db_lock):
     info = metadata.get("info", {})
     movie_data = metadata.get("movie_data", {})
     flattened = {**info, **movie_data}
@@ -145,17 +146,17 @@ def update_movie(db_path, stream_id, metadata):
     params.append(stream_id)
     sql_query = f"UPDATE vod_streams SET {', '.join(set_clauses)} WHERE stream_id=?"
 
-    # Removed db_lock here as each thread will have its own connection
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL") # Add WAL mode for better concurrency
-    cursor = conn.cursor()
-    cursor.execute(sql_query, params)
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL") # Add WAL mode for better concurrency
+        cursor = conn.cursor()
+        cursor.execute(sql_query, params)
+        conn.commit()
+        conn.close()
     return cursor.rowcount
 
 # Moved process_movie outside main()
-def process_movie(index, movie_tuple, total_movies):
+def process_movie(index, movie_tuple, total_movies, db_lock):
     stream_id, server_id = movie_tuple
     server = get_server_info(DB_PATH, server_id) # DB_PATH is global
     if not server:
@@ -177,7 +178,7 @@ def process_movie(index, movie_tuple, total_movies):
         if not isinstance(metadata, dict):
             logger.error(f"Unexpected metadata type for stream_id {stream_id}: {type(metadata)}. Value: {metadata}")
             return 0 # Skip update if type is incorrect
-        updated = update_movie(DB_PATH, stream_id, metadata)
+        updated = update_movie(DB_PATH, stream_id, metadata, db_lock)
         print(f"[{index}/{total_movies}] Updated stream_id {stream_id}" if updated else f"[{index}/{total_movies}] No update applied for stream_id {stream_id}", flush=True)
         return updated
     else:
@@ -193,10 +194,11 @@ def main():
 
     total_updated = 0
     has_errors = False
+    db_lock = threading.Lock()
 
     with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as executor:
         # Pass total_movies to process_movie
-        futures = {executor.submit(process_movie, i+1, movie, total_movies): movie for i, movie in enumerate(movies)}
+        futures = {executor.submit(process_movie, i+1, movie, total_movies, db_lock): movie for i, movie in enumerate(movies)}
         for future in as_completed(futures):
             try:
                 total_updated += future.result()

@@ -19,12 +19,15 @@ import helpers.create_strm_files as create_strm_files
 import helpers.create_series_strm_files as create_series_strm_files
 import helpers.updatelive as updatelive
 import helpers.defaultepggrabber as defaultepggrabber
+import helpers.create_m3u_playlist as create_m3u_playlist
+import helpers.create_epg_xml as create_epg_xml
 
 # --- Constants ---
 CURRENT_DIR = os.getcwd()
 DB_FILEPATH = os.path.join(CURRENT_DIR, "database", "media_player.db")
 CACHE_DIR = Path(os.path.join(CURRENT_DIR, "database", "cache"))
 SCHEDULE_FILE = os.path.join(CURRENT_DIR, "schedule.json")
+PREFERENCES_FILE = os.path.join(CURRENT_DIR, "preferences.json")
 
 # Setup logging
 log_file_path = Path('fynix_library_builder.log')
@@ -34,6 +37,38 @@ logging.basicConfig(level=logging.INFO,
                         logging.FileHandler(log_file_path),
                         logging.StreamHandler(sys.stdout)
                     ])
+
+# --- Preference Management ---
+def save_preference(key, value):
+    """Saves a user preference to a JSON file."""
+    preferences = {}
+    if os.path.exists(PREFERENCES_FILE):
+        try:
+            with open(PREFERENCES_FILE, 'r') as f:
+                preferences = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            logging.warning(f"Failed to load existing preferences: {e}. Starting with empty preferences.")
+    
+    preferences[key] = value
+    try:
+        with open(PREFERENCES_FILE, 'w') as f:
+            json.dump(preferences, f, indent=4)
+        return True
+    except IOError as e:
+        logging.error(f"Failed to save preference '{key}': {e}")
+        return False
+
+def load_preference(key, default_value):
+    """Loads a user preference from a JSON file, or returns a default value."""
+    if not os.path.exists(PREFERENCES_FILE):
+        return default_value
+    try:
+        with open(PREFERENCES_FILE, 'r') as f:
+            preferences = json.load(f)
+            return preferences.get(key, default_value)
+    except (IOError, json.JSONDecodeError) as e:
+        logging.error(f"Failed to load preference '{key}': {e}. Returning default value.")
+        return default_value
 
 # --- Schedule Management ---
 def save_schedule(enabled, time_str):
@@ -329,15 +364,81 @@ def get_database_statistics():
             conn.close()
     return stats
 
+def get_live_categories():
+    """Retrieves all live categories from the database."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, category_id, category_name, visible FROM categories WHERE content_type = 'live' ORDER BY category_name")
+        categories = cursor.fetchall()
+        return [dict(cat) for cat in categories]
+    except sqlite3.Error as e:
+        logging.error(f"Failed to retrieve live categories: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def get_live_streams_by_category(category_id):
+    """Retrieves all live streams for a given category from the database."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, visible FROM live_streams WHERE category_id = ? ORDER BY name", (category_id,))
+        streams = cursor.fetchall()
+        return [dict(stream) for stream in streams]
+    except sqlite3.Error as e:
+        logging.error(f"Failed to retrieve live streams for category {category_id}: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def update_live_stream_visibility(stream_id, visible):
+    """Updates the visibility of a live stream."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE live_streams SET visible = ? WHERE id = ?", (visible, stream_id))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Failed to update live stream ID {stream_id} visibility: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def batch_update_live_stream_visibility(stream_ids, visible):
+    """Updates the visibility of multiple live streams."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+        cursor.executemany("UPDATE live_streams SET visible = ? WHERE id = ?", [(visible, stream_id) for stream_id in stream_ids])
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Failed to batch update live stream visibility: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 # --- Core Logic Functions ---
 
-def run_initial_setup(server_details, movie_path, series_path, progress_callback):
+def run_initial_setup(server_details, movie_path, series_path, live_tv_path, progress_callback):
     """Runs the entire initial database setup and sync process."""
     server_name, server_url, server_username, server_password, server_port = server_details
 
     scripts_to_run = [
         ("Setting up database tables", setupdb.main),
-        ("Saving library folder configurations", lambda: config_manager.save_directories(movie_path, series_path)),
+        ("Saving library folder configurations", lambda: config_manager.save_directories(movie_path, series_path, live_tv_path)),
         ("Adding server information", lambda: addserver.add_iptv_server(DB_FILEPATH, server_name, server_url, server_username, server_password, server_port)),
         ("Updating categories", updatecats.main),
         ("Updating live streams", updatelive.main),
@@ -364,14 +465,23 @@ def run_initial_setup(server_details, movie_path, series_path, progress_callback
     progress_callback("All scripts completed successfully!\n")
     return True
 
-def run_library_update(progress_callback):
+def run_library_update(process_live_tv, progress_callback=None):
     """Runs the full library update process."""
     progress_callback("Starting library update...")
 
     scripts_to_run = [
         ("Updating categories", updatecats.main),
-        ("Updating live streams", updatelive.main),
-        ("Grabbing EPG data", defaultepggrabber.main),
+    ]
+
+    if process_live_tv:
+        scripts_to_run.extend([
+            ("Updating live streams", updatelive.main),
+            ("Grabbing EPG data", defaultepggrabber.main),
+            ("Generating M3U playlist", create_m3u_playlist.create_m3u_playlist),
+            ("Generating EPG XML", create_epg_xml.generate_epg_xml),
+        ])
+
+    scripts_to_run.extend([
         ("Updating movies", updatemovies.main),
         ("Updating series", updateseries.main),
         ("Updating movie metadata", updatemoviemetadata.main),
@@ -379,18 +489,32 @@ def run_library_update(progress_callback):
         ("Creating movie .strm files", create_strm_files.main),
         ("Creating series .strm files", create_series_strm_files.main),
         ("Vacuuming database", vacuumdb.vacuum_database),
-    ]
+    ])
 
     for description, script_func in scripts_to_run:
         progress_callback(f"{description}... ")
         try:
-            if not script_func():
-                raise Exception(f"{description} failed.")
+            # For create_epg_xml, it needs the output path
+            if script_func == create_epg_xml.generate_epg_xml:
+                project_root = Path(CURRENT_DIR)
+                output_file = project_root / "epg.xml"
+                result = script_func(output_file) # Store result
+                if not result: # Check result
+                    print(f"ERROR: {description} failed. Result: {result}", file=sys.stderr) # Added
+                    raise Exception(f"{description} failed.")
+            else:
+                result = script_func() # Store result
+                if not result: # Check result
+                    print(f"ERROR: {description} failed. Result: {result}", file=sys.stderr) # Added
+                    raise Exception(f"{description} failed.")
             progress_callback("DONE\n")
         except Exception as e:
-            error_message = f"FAILED: {e}\n"
+            import traceback # Import traceback here
+            error_traceback = traceback.format_exc() # Get full traceback
+            error_message = f"FAILED: {e}\n{error_traceback}" # Include traceback in message
             progress_callback(error_message)
             logging.error(f"Failed during {description}: {e}")
+            print(f"ERROR: {error_message}", file=sys.stderr) # Print to stderr
             return False
     
     progress_callback("Library update completed successfully!")

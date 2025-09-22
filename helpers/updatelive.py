@@ -166,8 +166,8 @@ class XtreamLiveStreamsDownloader:
             logger.error(f"Error downloading live streams from {server['name']}: {e}")
             return []
 
-    def get_category_mapping(self, server_id: int) -> Dict[str, str]:
-        """Return mapping of API category_id -> database categories.category_id"""
+    def get_category_mapping(self, server_id: int) -> set:
+        """Return a set of existing live category_ids for a server."""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -175,14 +175,10 @@ class XtreamLiveStreamsDownloader:
                 FROM categories 
                 WHERE server_id = ? AND content_type = 'live'
             """, (server_id,))
-            mapping = {}
-            for row in cursor.fetchall():
-                cat_id = str(row['category_id'])
-                mapping[cat_id] = cat_id
-            return mapping
+            return {str(row['category_id']) for row in cursor.fetchall()}
         except sqlite3.Error as e:
             logger.error(f"Error getting category mapping: {e}")
-            return {}
+            return set()
 
     def stream_exists(self, server_id: int, stream_id: int) -> bool:
         try:
@@ -193,7 +189,7 @@ class XtreamLiveStreamsDownloader:
             logger.error(f"Error checking stream existence: {e}")
             return False
 
-    def insert_stream(self, server_id: int, stream_data: Dict, category_mapping: Dict) -> bool:
+    def insert_stream(self, server_id: int, stream_data: Dict, existing_categories: set) -> bool:
         try:
             cursor = self.conn.cursor()
             stream_id = stream_data.get('stream_id')
@@ -207,27 +203,20 @@ class XtreamLiveStreamsDownloader:
             tv_archive = stream_data.get('tv_archive', 0)
             direct_source = stream_data.get('direct_source', '')
             tv_archive_duration = stream_data.get('tv_archive_duration', 0)
+            category_id = str(stream_data.get('category_id', ''))
 
-            category_id_str = str(stream_data.get('category_id', ''))
-            db_category_id = category_mapping.get(category_id_str)
-
-            if not db_category_id:
-                # fallback to first live category or '0'
-                cursor.execute("""
-                    SELECT category_id FROM categories
-                    WHERE server_id = ? AND content_type = 'live'
-                    LIMIT 1
-                """, (server_id,))
-                row = cursor.fetchone()
-                db_category_id = row['category_id'] if row else '0'
+            # Ensure the category exists before inserting
+            if category_id not in existing_categories:
+                logger.warning(f"Category ID {category_id} not found for stream {name}. Skipping.")
+                return False
 
             cursor.execute("""
                 INSERT INTO live_streams (
                     server_id, category_id, stream_id, name, stream_type,
-                    stream_icon, epg_channel_id, tv_archive, direct_source, tv_archive_duration
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    stream_icon, epg_channel_id, tv_archive, direct_source, tv_archive_duration, visible
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             """, (
-                server_id, db_category_id, stream_id, name, stream_type,
+                server_id, category_id, stream_id, name, stream_type,
                 stream_icon, epg_channel_id, tv_archive, direct_source, tv_archive_duration
             ))
 
@@ -239,7 +228,7 @@ class XtreamLiveStreamsDownloader:
     def process_streams_for_server(self, server: Dict) -> Tuple[int, int, int]:
         total_downloaded, total_new, total_existing = 0, 0, 0
         try:
-            category_mapping = self.get_category_mapping(server['id'])
+            existing_categories = self.get_category_mapping(server['id'])
             streams = self.download_live_streams(server)
             if not streams:
                 return 0, 0, 0
@@ -253,7 +242,7 @@ class XtreamLiveStreamsDownloader:
                 if self.stream_exists(server['id'], stream_id):
                     total_existing += 1
                     continue
-                if self.insert_stream(server['id'], stream_data, category_mapping):
+                if self.insert_stream(server['id'], stream_data, existing_categories):
                     total_new += 1
             self.conn.commit()
             total_downloaded = len(streams)
