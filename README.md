@@ -1,3 +1,4 @@
+**Code generated using Gemini CLI**
 
 # Fynix Library Builder
 
