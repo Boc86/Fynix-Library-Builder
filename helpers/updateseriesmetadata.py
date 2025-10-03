@@ -5,6 +5,7 @@ import time
 import pickle
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 # Configure logging
 import sys
@@ -78,9 +79,6 @@ def load_cache(stream_id):
     cache_file = CACHE_DIR / f"{stream_id}.pkl"
     if cache_file.exists():
         try:
-            # Check if cache has expired
-            if time.time() - cache_file.stat().st_mtime > CACHE_EXPIRY:
-                return None
             with open(cache_file, "rb") as f:
                 return pickle.load(f)
         except Exception:
@@ -99,7 +97,7 @@ def get_series(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT series_id, server_id FROM series WHERE tmdb_id IS NULL OR tmdb_id=''")
+    cursor.execute("SELECT series_id, server_id, last_modified FROM series")
     series = cursor.fetchall()
     conn.close()
     return series
@@ -187,15 +185,29 @@ def insert_episode(cursor, server_id, series_id, season_num, episode):
     )
     return params
 
-# Moved process_series outside main()
 def process_series(db_path, index, series_tuple, total_series):
-    series_id, server_id = series_tuple
-    server = get_server_info(db_path, server_id) # Pass db_path
+    series_id, server_id, last_modified_str = series_tuple
+    server = get_server_info(db_path, server_id)
     if not server:
         logger.warning(f"Server {server_id} not found, skipping series_id {series_id}")
         return 0, 0
 
-    metadata = load_cache(series_id)
+    cache_file = CACHE_DIR / f"{series_id}.pkl"
+    metadata = None
+    use_cache = False
+
+    if cache_file.exists():
+        cache_mod_time = datetime.fromtimestamp(cache_file.stat().st_mtime)
+        if last_modified_str:
+            last_modified = datetime.fromtimestamp(int(last_modified_str))
+            if cache_mod_time > last_modified:
+                use_cache = True
+        else:
+            use_cache = True
+
+    if use_cache:
+        metadata = load_cache(series_id)
+
     if metadata is None:
         metadata = fetch_series_metadata(server, series_id)
         if metadata:
@@ -280,7 +292,7 @@ def main():
 
     series_list = get_series(DB_PATH)
     total_series = len(series_list)
-    print(f"Found {total_series} series without TMDB ID", flush=True)
+    print(f"Found {total_series} series to process", flush=True)
 
     total_updated_series = 0
     total_inserted_episodes = 0
@@ -289,17 +301,19 @@ def main():
     with ThreadPoolExecutor(max_workers=THREAD_WORKERS) as executor:
         futures = {executor.submit(process_series, DB_PATH, i+1, series_tuple, total_series): series_tuple for i, series_tuple in enumerate(series_list)}
         for future in as_completed(futures):
+            series_tuple = futures[future]
+            series_id = series_tuple[0]
             try:
                 updated_series, inserted_episodes = future.result()
                 total_updated_series += updated_series
                 total_inserted_episodes += inserted_episodes
             except Exception as e:
-                logger.error(f"Error processing series: {e}")
+                logger.error(f"Error processing series {series_id}: {e}")
                 has_errors = True
 
     print(f"Series metadata update completed: total series updated {total_updated_series}, total episodes added {total_inserted_episodes}", flush=True)
 
-    return True # Always return True if the main execution flow completes
+    return not has_errors
 
 if __name__ == "__main__":
     main()
