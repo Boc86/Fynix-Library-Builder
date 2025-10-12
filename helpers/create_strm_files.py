@@ -7,7 +7,7 @@ import helpers.config_manager as config_manager
 from helpers.create_nfo_files import create_single_nfo_file # Import the new function
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Paths
@@ -154,7 +154,7 @@ def create_strm_files() -> bool:
                 create_single_nfo_file(stream_dict, filename_base, movies_path)
 
             except Exception as e:
-                logger.error(f"Error creating .strm file for {original_name} ({stream_id}): {e}")
+                logger.error(f"Error creating .strm file for {original_name} ({stream_id}): {e}", exc_info=True)
                 # Continue to next stream even if one fails
 
         logger.info("Finished creating .strm and .nfo files.")

@@ -21,6 +21,8 @@ import helpers.updatelive as updatelive
 import helpers.defaultepggrabber as defaultepggrabber
 import helpers.create_m3u_playlist as create_m3u_playlist
 import helpers.create_epg_xml as create_epg_xml
+import helpers.create_nfo_files as create_nfo_files
+import helpers.create_series_nfo_files as create_series_nfo_files
 
 # --- Constants ---
 CURRENT_DIR = os.getcwd()
@@ -31,7 +33,7 @@ PREFERENCES_FILE = os.path.join(CURRENT_DIR, "preferences.json")
 
 # Setup logging
 log_file_path = Path('fynix_library_builder.log')
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     handlers=[
                         logging.FileHandler(log_file_path),
@@ -537,3 +539,32 @@ def run_clear_cache(progress_callback):
         logging.error(f"Error clearing cache: {e}")
         progress_callback(f"Error clearing cache: {e}")
         return False
+
+def run_strm_and_nfo_creation(progress_callback=None):
+    """Runs only the .strm and .nfo file creation scripts."""
+    progress_callback("Starting .strm and .nfo file creation...")
+
+    scripts_to_run = [
+        ("Creating movie .strm files", create_strm_files.main),
+        ("Creating series .strm files", create_series_strm_files.main),
+        ("Creating movie .nfo files", create_nfo_files.main),
+        ("Creating series .nfo files", create_series_nfo_files.main),
+    ]
+
+    for description, script_func in scripts_to_run:
+        progress_callback(f"{description}... ")
+        try:
+            if not script_func():
+                raise Exception(f"{description} failed.")
+            progress_callback("DONE\n")
+        except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            error_message = f"FAILED: {e}\n{error_traceback}"
+            progress_callback(error_message)
+            logging.error(f"Failed during {description}: {e}")
+            print(f"ERROR: {error_message}", file=sys.stderr)
+            return False
+    
+    progress_callback("File creation completed successfully!")
+    return True

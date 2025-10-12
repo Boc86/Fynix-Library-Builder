@@ -223,43 +223,49 @@ def process_series(db_path, index, series_tuple, total_series):
         # Batch insert episodes
         episodes_to_insert = []
         episodes_data = metadata.get("episodes", {})
-        for season_num, episodes_list in episodes_data.items():
-            for episode in episodes_list:
-                # Temporarily open connection to check for existing episodes
-                # This is a trade-off to avoid re-fetching all episodes if many exist
-                temp_conn = sqlite3.connect(db_path)
-                temp_cursor = temp_conn.cursor()
-                temp_cursor.execute("SELECT 1 FROM episodes WHERE episode_id=?", (episode["id"],))
-                if not temp_cursor.fetchone():
-                    video_codec = episode.get("video", {}).get("codec_name", "")
-                    audio_channels = episode.get("audio", {}).get("channels", "")
+        if isinstance(episodes_data, dict):
+            for season_num, episodes_list in episodes_data.items():
+                for episode in episodes_list:
+                    if not isinstance(episode, dict):
+                        logger.warning(f"Skipping non-dictionary episode item in series {series_id}: {episode}")
+                        continue
+                    # Temporarily open connection to check for existing episodes
+                    # This is a trade-off to avoid re-fetching all episodes if many exist
+                    temp_conn = sqlite3.connect(db_path)
+                    temp_cursor = temp_conn.cursor()
+                    temp_cursor.execute("SELECT 1 FROM episodes WHERE episode_id=?", (episode["id"],))
+                    if not temp_cursor.fetchone():
+                        video_codec = episode.get("video", {}).get("codec_name", "")
+                        audio_channels = episode.get("audio", {}).get("channels", "")
 
-                    params = (
-                        server_id,
-                        series_id,
-                        int(season_num), # Ensure season_num is int
-                        episode["id"],
-                        episode.get("title", ""),
-                        episode.get("info", {}).get("plot", ""),
-                        episode.get("duration", ""),
-                        episode.get("info", {}).get("air_date", ""),
-                        episode.get("container_extension", ""),
-                        episode.get("episode_num", 0),
-                        episode.get("info", {}).get("rating", 0),
-                        episode.get("info", {}).get("crew", ""),
-                        str(episode.get("info", {}).get("id", "")),
-                        episode.get("info", {}).get("movie_image", ""),
-                        episode.get("info", {}).get("duration_secs", 0),
-                        video_codec,
-                        audio_channels,
-                        episode.get("bitrate", 0),
-                        episode.get("custom_sid", ""),
-                        episode.get("added", ""),
-                        episode.get("direct_source", ""),
-                        episode.get("season", int(season_num)) # Ensure season is int
-                    )
-                    episodes_to_insert.append(params)
-                temp_conn.close()
+                        params = (
+                            server_id,
+                            series_id,
+                            int(season_num), # Ensure season_num is int
+                            episode["id"],
+                            episode.get("title", ""),
+                            episode.get("info", {}).get("plot", ""),
+                            episode.get("duration", ""),
+                            episode.get("info", {}).get("air_date", ""),
+                            episode.get("container_extension", ""),
+                            episode.get("episode_num", 0),
+                            episode.get("info", {}).get("rating", 0),
+                            episode.get("info", {}).get("crew", ""),
+                            str(episode.get("info", {}).get("id", "")),
+                            episode.get("info", {}).get("movie_image", ""),
+                            episode.get("info", {}).get("duration_secs", 0),
+                            video_codec,
+                            audio_channels,
+                            episode.get("bitrate", 0),
+                            episode.get("custom_sid", ""),
+                            episode.get("added", ""),
+                            episode.get("direct_source", ""),
+                            episode.get("season", int(season_num)) # Ensure season is int
+                        )
+                        episodes_to_insert.append(params)
+                    temp_conn.close()
+        else:
+            logger.warning(f"Episodes data for series {series_id} is not a dictionary, skipping episode processing.")
 
         if episodes_to_insert:
             conn = sqlite3.connect(db_path)
@@ -308,7 +314,9 @@ def main():
                 total_updated_series += updated_series
                 total_inserted_episodes += inserted_episodes
             except Exception as e:
+                import traceback
                 logger.error(f"Error processing series {series_id}: {e}")
+                traceback.print_exc()
                 has_errors = True
 
     print(f"Series metadata update completed: total series updated {total_updated_series}, total episodes added {total_inserted_episodes}", flush=True)

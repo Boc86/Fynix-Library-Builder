@@ -123,6 +123,9 @@ def normalize_value(value, key):
     return value
 
 def update_movie(db_path, stream_id, metadata, db_lock):
+    if not isinstance(metadata, dict):
+        logger.error(f"Unexpected metadata type for stream_id {stream_id}: {type(metadata)}. Value: {metadata}")
+        return 0
     info = metadata.get("info", {})
     movie_data = metadata.get("movie_data", {})
     flattened = {**info, **movie_data}

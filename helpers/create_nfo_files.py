@@ -9,7 +9,7 @@ from xml.dom import minidom # For pretty printing XML
 import helpers.config_manager as config_manager
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Paths
@@ -210,7 +210,7 @@ def create_single_nfo_file(stream_data: dict, filename_base: str, movies_path: P
         logger.debug(f"Created .nfo file: {nfo_filepath}")
         return True
     except Exception as e:
-        logger.error(f"Error creating .nfo file for {stream_data.get('name', 'Unknown')} ({stream_data.get('stream_id', '')}): {e}")
+        logger.error(f"Error creating .nfo file for {stream_data.get('name', 'Unknown')} ({stream_data.get('stream_id', '')}): {e}", exc_info=True)
         return False
 
 def create_nfo_files() -> bool:

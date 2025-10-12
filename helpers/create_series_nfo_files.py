@@ -8,7 +8,7 @@ from xml.dom import minidom # For pretty printing XML
 import json # For parsing video/audio JSON
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Paths
@@ -329,7 +329,7 @@ def create_single_tvshow_nfo_file(series_data: dict, series_folder_path: Path) -
         logger.debug(f"Created tvshow.nfo file: {nfo_filepath}")
         return True
     except Exception as e:
-        logger.error(f"Error creating tvshow.nfo for {series_data.get('name', 'Unknown')} ({series_data.get('series_id', '')}): {e}")
+        logger.error(f"Error creating tvshow.nfo for {series_data.get('name', 'Unknown')} ({series_data.get('series_id', '')}): {e}", exc_info=True)
         return False
 
 def create_single_episode_nfo_file(episode_data: dict, filename_base: str, season_path: Path, series_name: str) -> bool:
@@ -350,7 +350,7 @@ def create_single_episode_nfo_file(episode_data: dict, filename_base: str, seaso
         logger.debug(f"Created episode .nfo file: {nfo_filepath}")
         return True
     except Exception as e:
-        logger.error(f"Error creating episode .nfo for {episode_data.get('title', 'Unknown')} ({episode_data.get('episode_id', '')}): {e}")
+        logger.error(f"Error creating episode .nfo for {episode_data.get('title', 'Unknown')} ({episode_data.get('episode_id', '')}): {e}", exc_info=True)
         return False
 
 def main() -> bool:

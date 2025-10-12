@@ -8,7 +8,7 @@ from helpers.create_strm_files import _sanitize_name, _extract_year # Reuse func
 from helpers.create_series_nfo_files import create_single_tvshow_nfo_file, create_single_episode_nfo_file # Import the new functions
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Paths
@@ -148,7 +148,7 @@ def create_series_strm_files() -> bool:
                         create_single_episode_nfo_file(episode_data, episode_filename_base, current_season_path, sanitized_series_name)
 
                     except Exception as e:
-                        logger.error(f"Error creating .strm file for episode {episode_title} ({episode_id}): {e}")
+                        logger.error(f"Error creating .strm file for episode {episode_title} ({episode_id}): {e}", exc_info=True)
                         # Continue to next episode even if one fails
 
         logger.info("Finished creating .strm and .nfo files for Series.")
