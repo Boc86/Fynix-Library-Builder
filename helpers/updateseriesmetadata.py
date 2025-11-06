@@ -220,6 +220,15 @@ def process_series(db_path, index, series_tuple, total_series):
     if metadata and isinstance(metadata, dict): # Ensure metadata is a dictionary
         updated_series = update_series(db_path, series_id, metadata)
 
+        # Fetch existing episode IDs for this series once
+        existing_episode_ids = set()
+        conn_check = sqlite3.connect(db_path)
+        cursor_check = conn_check.cursor()
+        cursor_check.execute("SELECT episode_id FROM episodes WHERE series_id=?", (series_id,))
+        for row in cursor_check.fetchall():
+            existing_episode_ids.add(row[0])
+        conn_check.close()
+
         # Batch insert episodes
         episodes_to_insert = []
         episodes_data = metadata.get("episodes", {})
@@ -235,12 +244,7 @@ def process_series(db_path, index, series_tuple, total_series):
                         if not isinstance(info, dict):
                             info = {}
 
-                        # Temporarily open connection to check for existing episodes
-                        # This is a trade-off to avoid re-fetching all episodes if many exist
-                        temp_conn = sqlite3.connect(db_path)
-                        temp_cursor = temp_conn.cursor()
-                        temp_cursor.execute("SELECT 1 FROM episodes WHERE episode_id=?", (episode["id"],))
-                        if not temp_cursor.fetchone():
+                        if episode["id"] not in existing_episode_ids:
                             video_codec = episode.get("video", {}).get("codec_name", "")
                             audio_channels = episode.get("audio", {}).get("channels", "")
 
@@ -269,10 +273,6 @@ def process_series(db_path, index, series_tuple, total_series):
                                 episode.get("season", int(season_num)) # Ensure season is int
                             )
                             episodes_to_insert.append(params)
-                        temp_conn.close()
-                    except AttributeError as e:
-                        logger.error(f"Error processing episode in series {series_id}: {e}")
-                        logger.error(f"Problematic episode data: {episode}")
         else:
             logger.warning(f"Episodes data for series {series_id} is not a dictionary, skipping episode processing.")
 
@@ -295,6 +295,14 @@ def process_series(db_path, index, series_tuple, total_series):
                 conn.rollback()
             finally:
                 conn.close()
+
+        # Update the last_modified timestamp in the series table
+        if updated_series > 0 or inserted_episodes > 0:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("UPDATE series SET last_modified = ? WHERE series_id = ?", (int(datetime.now().timestamp()), series_id))
+            conn.commit()
+            conn.close()
 
         logger.info(f"[{index}/{total_series}] Series {series_id} updated: {updated_series}, Episodes added: {inserted_episodes}")
     else:

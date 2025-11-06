@@ -195,6 +195,37 @@ class XtreamSeriesDownloader:
             logger.error(f"Error inserting series {series_data.get('name', 'Unknown')}: {e}")
             return False
 
+    def update_series(self, server_id: int, series_data: Dict, category_mapping: Dict[int, int]) -> bool:
+        try:
+            cursor = self.conn.cursor()
+            series_id = series_data.get('series_id')
+            name = series_data.get('name', 'Unknown')
+            cover = series_data.get('cover', '')
+            plot = series_data.get('plot', '')
+            cast = series_data.get('cast', '')
+            director = series_data.get('director', '')
+            genre = series_data.get('genre', '')
+            rating = float(series_data.get('rating', 0.0)) if series_data.get('rating') else 0.0
+            release_date = series_data.get('releaseDate', '')
+            last_modified = series_data.get('last_modified', '')
+            xtream_category_id_str = series_data.get('category_id')
+            xtream_category_id = int(xtream_category_id_str) if xtream_category_id_str else None
+            category_id = category_mapping.get(xtream_category_id) if xtream_category_id is not None else None
+
+            cursor.execute("""
+                UPDATE series SET
+                    name = ?, cover = ?, plot = ?, cast = ?, director = ?, genre = ?,
+                    rating = ?, release_date = ?, last_modified = ?, category_id = ?
+                WHERE server_id = ? AND series_id = ?
+            """, (
+                name, cover, plot, cast, director, genre, rating, release_date, last_modified, category_id,
+                server_id, series_id
+            ))
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error updating series {series_data.get('name', 'Unknown')}: {e}")
+            return False
+
     def process_series_for_server(self, server: Dict) -> Tuple[int, int, int]:
         total_downloaded = 0
         total_new = 0
@@ -203,7 +234,7 @@ class XtreamSeriesDownloader:
             logger.info(f"Processing series for server: {server['name']}")
             cache_key = self._generate_cache_key(server)
             series_list = self._load_from_cache(cache_key)
-            category_mapping = self.get_category_mapping(server['id'])  # <-- fix here
+            category_mapping = self.get_category_mapping(server['id'])
 
             if series_list is not None:
                 logger.info(f"Using cached series for {server['name']} ({len(series_list)} items)")
@@ -254,10 +285,11 @@ class XtreamSeriesDownloader:
                         logger.warning(f"Series missing series_id: {series_data}")
                         continue
                     if self.series_exists(server['id'], series_id):
-                        batch_existing += 1
-                        continue
-                    if self.insert_series(server['id'], series_data, category_mapping):
-                        batch_new += 1
+                        if self.update_series(server['id'], series_data, category_mapping):
+                            batch_existing += 1 # Count as existing and updated
+                    else:
+                        if self.insert_series(server['id'], series_data, category_mapping):
+                            batch_new += 1
 
                 self.conn.commit()
                 new_count += batch_new
@@ -266,7 +298,7 @@ class XtreamSeriesDownloader:
                 if batch_num < total_batches - 1:
                     time.sleep(0.1)
 
-            logger.info(f"Server {server['name']} - series: {downloaded_count} downloaded, {new_count} new, {existing_count} existing")
+            logger.info(f"Server {server['name']} - series: {downloaded_count} downloaded, {new_count} new, {existing_count} updated")
             total_downloaded = downloaded_count
             total_new = new_count
             total_existing = existing_count
