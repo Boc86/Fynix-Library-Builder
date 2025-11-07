@@ -235,44 +235,43 @@ def process_series(db_path, index, series_tuple, total_series):
         if isinstance(episodes_data, dict):
             for season_num, episodes_list in episodes_data.items():
                 for episode in episodes_list:
-                    try:
-                        if not isinstance(episode, dict):
-                            logger.warning(f"Skipping non-dictionary episode item in series {series_id}: {episode}")
-                            continue
-                        
-                        info = episode.get("info", {})
-                        if not isinstance(info, dict):
-                            info = {}
+                    if not isinstance(episode, dict):
+                        logger.warning(f"Skipping non-dictionary episode item in series {series_id}: {episode}")
+                        continue
+                    
+                    info = episode.get("info", {})
+                    if not isinstance(info, dict):
+                        info = {}
 
-                        if episode["id"] not in existing_episode_ids:
-                            video_codec = episode.get("video", {}).get("codec_name", "")
-                            audio_channels = episode.get("audio", {}).get("channels", "")
+                    if "id" in episode and episode["id"] not in existing_episode_ids:
+                        video_codec = episode.get("video", {}).get("codec_name", "")
+                        audio_channels = episode.get("audio", {}).get("channels", "")
 
-                            params = (
-                                server_id,
-                                series_id,
-                                int(season_num), # Ensure season_num is int
-                                episode["id"],
-                                episode.get("title", ""),
-                                info.get("plot", ""),
-                                episode.get("duration", ""),
-                                info.get("air_date", ""),
-                                episode.get("container_extension", ""),
-                                episode.get("episode_num", 0),
-                                info.get("rating", 0),
-                                info.get("crew", ""),
-                                str(info.get("id", "")),
-                                info.get("movie_image", ""),
-                                info.get("duration_secs", 0),
-                                video_codec,
-                                audio_channels,
-                                episode.get("bitrate", 0),
-                                episode.get("custom_sid", ""),
-                                episode.get("added", ""),
-                                episode.get("direct_source", ""),
-                                episode.get("season", int(season_num)) # Ensure season is int
-                            )
-                            episodes_to_insert.append(params)
+                        params = (
+                            server_id,
+                            series_id,
+                            int(season_num), # Ensure season_num is int
+                            episode["id"],
+                            episode.get("title", ""),
+                            info.get("plot", ""),
+                            episode.get("duration", ""),
+                            info.get("air_date", ""),
+                            episode.get("container_extension", ""),
+                            episode.get("episode_num", 0),
+                            info.get("rating", 0),
+                            info.get("crew", ""),
+                            str(info.get("id", "")),
+                            info.get("movie_image", ""),
+                            info.get("duration_secs", 0),
+                            video_codec,
+                            audio_channels,
+                            episode.get("bitrate", 0),
+                            episode.get("custom_sid", ""),
+                            episode.get("added", ""),
+                            episode.get("direct_source", ""),
+                            episode.get("season", int(season_num)) # Ensure season is int
+                        )
+                        episodes_to_insert.append(params)
         else:
             logger.warning(f"Episodes data for series {series_id} is not a dictionary, skipping episode processing.")
 
