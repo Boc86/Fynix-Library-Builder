@@ -5,6 +5,9 @@ from pathlib import Path
 import logging
 import sys
 import json
+from datetime import datetime
+import gzip
+import glob
 
 import helpers.setupdb as setupdb
 import helpers.addserver as addserver
@@ -23,6 +26,7 @@ import helpers.create_m3u_playlist as create_m3u_playlist
 import helpers.create_epg_xml as create_epg_xml
 import helpers.create_nfo_files as create_nfo_files
 import helpers.create_series_nfo_files as create_series_nfo_files
+import helpers.clean_metadata as clean_metadata
 
 # --- Constants ---
 CURRENT_DIR = os.getcwd()
@@ -568,3 +572,109 @@ def run_strm_and_nfo_creation(progress_callback=None):
     
     progress_callback("File creation completed successfully!")
     return True
+
+
+def run_clean_metadata(progress_callback=None):
+    """Scans configured library directories and prunes unnecessary metadata
+    for .strm/.nfo-backed items, keeping only the minimum required fields.
+    """
+    if progress_callback:
+        progress_callback("Starting metadata cleanup...")
+    result = clean_metadata.clean_all(progress_callback=progress_callback)
+    if progress_callback:
+        progress_callback("Metadata cleanup finished.")
+    return result
+
+
+def run_clean_and_vacuum(progress_callback=None):
+    """Run metadata cleaning and then vacuum the database to reclaim space."""
+    success = True
+    # Create a DB backup before modifying the database
+    try:
+        if progress_callback:
+            progress_callback("Creating database backup...")
+        db_path = Path(DB_FILEPATH)
+        if not db_path.exists():
+            logging.error(f"Database file not found for backup: {DB_FILEPATH}")
+            if progress_callback:
+                progress_callback("Database file not found; aborting backup.")
+            return False
+        backup_dir = db_path.parent
+        ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        backup_path = backup_dir / f"media_player.db.bak-{ts}"
+        # copy original DB
+        shutil.copy2(db_path, backup_path)
+
+        # compress the backup to .gz
+        gz_path = Path(str(backup_path) + ".gz")
+        with open(backup_path, 'rb') as f_in, gzip.open(gz_path, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        # remove uncompressed backup
+        try:
+            backup_path.unlink()
+        except Exception:
+            logging.debug("Could not remove uncompressed backup file; continuing.")
+
+        logging.info(f"Created compressed database backup: {gz_path}")
+        if progress_callback:
+            progress_callback(f"Database backed up to {gz_path}")
+
+        # Retention: keep only the latest N backups (compressed). Default N from preferences (3)
+        try:
+            retention_keep = int(load_preference('backup_retention', 3))
+        except Exception:
+            retention_keep = 3
+        pattern = str(backup_dir / "media_player.db.bak-*.gz")
+        all_backups = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+        if len(all_backups) > retention_keep:
+            to_delete = all_backups[retention_keep:]
+            for old in to_delete:
+                try:
+                    os.remove(old)
+                    logging.info(f"Removed old backup: {old}")
+                except Exception:
+                    logging.warning(f"Failed to remove old backup: {old}")
+            if progress_callback:
+                progress_callback(f"Kept {retention_keep} backups; removed {len(to_delete)} old backups.")
+    except Exception as e:
+        logging.exception(f"Failed to create DB backup: {e}")
+        if progress_callback:
+            progress_callback(f"Failed to create DB backup: {e}")
+        return False
+
+    if progress_callback:
+        progress_callback("Cleaning metadata...")
+    try:
+        cleaned = clean_metadata.clean_all(progress_callback=progress_callback)
+        if not cleaned:
+            success = False
+            logging.warning("Metadata cleaning reported failure.")
+    except Exception as e:
+        logging.exception(f"Error during metadata cleaning: {e}")
+        success = False
+
+    if progress_callback:
+        progress_callback("Running VACUUM on database...")
+    try:
+        vac_ok = vacuumdb.vacuum_database()
+        if not vac_ok:
+            success = False
+            logging.warning("VACUUM reported failure.")
+    except Exception as e:
+        logging.exception(f"Error during VACUUM: {e}")
+        success = False
+
+    if progress_callback:
+        progress_callback("Clean + VACUUM completed." if success else "Clean + VACUUM finished with errors.")
+
+    return success
+
+
+def preview_clean_metadata():
+    """Return a summary of what would be cleaned by the metadata cleaner (no DB writes)."""
+    try:
+        summary = clean_metadata.preview_clean_all()
+        return summary
+    except Exception as e:
+        logging.exception(f"Error during preview_clean_metadata: {e}")
+        return {}

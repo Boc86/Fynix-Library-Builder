@@ -4,9 +4,10 @@ from pathlib import Path
 import os
 import re
 import helpers.config_manager as config_manager
+import helpers.config_manager as config_manager
 from helpers.create_strm_files import _sanitize_name, _extract_year # Reuse functions
 from helpers.create_series_nfo_files import create_single_tvshow_nfo_file, create_single_episode_nfo_file # Import the new functions
-
+import helpers.clean_metadata as clean_metadata
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -146,6 +147,12 @@ def create_series_strm_files() -> bool:
                         
                         # Create corresponding .nfo file for the episode
                         create_single_episode_nfo_file(episode_data, episode_filename_base, current_season_path, sanitized_series_name)
+
+                        # Clean DB metadata for this episode to keep minimal dataset
+                        try:
+                            clean_metadata.clean_for_episode(episode_id)
+                        except Exception:
+                            logger.exception(f"Failed to run post-create metadata clean for episode {episode_id}")
 
                     except Exception as e:
                         logger.error(f"Error creating .strm file for episode {episode_title} ({episode_id}): {e}", exc_info=True)

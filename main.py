@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QGroupBox, QLineEdit, QPushButton, QScrollArea, QCheckBox, QTimeEdit,
     QWizard, QWizardPage, QLabel, QPlainTextEdit, QSizePolicy, QSystemTrayIcon, QMenu, QTabWidget,
-    QListWidget, QListWidgetItem
+    QListWidget, QListWidgetItem, QMessageBox, QSpinBox
 )
 from PySide6.QtCore import QThread, QObject, Signal, Slot, Qt, QTime, QTimer
 from PySide6.QtGui import QPalette, QColor, QPixmap, QIcon, QAction
@@ -370,6 +370,28 @@ class FynixPlayerWindow(QMainWindow):
         self.clear_cache_button.clicked.connect(self.run_clear_cache)
         layout.addWidget(self.clear_cache_button)
 
+        # Clean Metadata + Vacuum button
+        self.clean_and_vacuum_button = QPushButton("Clean Metadata & Vacuum")
+        self.clean_and_vacuum_button.setToolTip("Remove unnecessary metadata for .strm/.nfo items and VACUUM DB to reclaim space.")
+        self.clean_and_vacuum_button.clicked.connect(self.confirm_and_run_clean_and_vacuum)
+        layout.addWidget(self.clean_and_vacuum_button)
+
+        # Backup retention setting
+        retention_layout = QHBoxLayout()
+        retention_label = QLabel("Backup retain:")
+        self.backup_retention_spinbox = QSpinBox()
+        self.backup_retention_spinbox.setRange(1, 20)
+        # Load saved preference (default 3)
+        try:
+            retention_val = backend.load_preference('backup_retention', 3)
+        except Exception:
+            retention_val = 3
+        self.backup_retention_spinbox.setValue(int(retention_val))
+        self.backup_retention_spinbox.valueChanged.connect(self.on_backup_retention_changed)
+        retention_layout.addWidget(retention_label)
+        retention_layout.addWidget(self.backup_retention_spinbox)
+        layout.addLayout(retention_layout)
+
         # New checkbox for Live TV processing
         self.process_live_tv_checkbox = QCheckBox("Process Live TV")
         self.process_live_tv_checkbox.setToolTip("Include live streams and EPG data in library updates.")
@@ -499,6 +521,56 @@ class FynixPlayerWindow(QMainWindow):
 
     def run_clear_cache(self):
         self.run_task(backend.run_clear_cache)
+
+    def run_clean_and_vacuum(self):
+        """Trigger cleaning of DB metadata and VACUUM in background thread."""
+        self.run_task(backend.run_clean_and_vacuum)
+
+    def confirm_and_run_clean_and_vacuum(self):
+        """Show confirmation dialog with dry-run option, preview cleaning, or run cleaning+vacuum."""
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Clean Metadata & VACUUM")
+        dlg.setText("This will remove unnecessary metadata for items backed by .strm/.nfo files and run VACUUM to reclaim space.\nThis operation is irreversible.\n\nChoose 'Preview' to see what would be cleaned without modifying the database.")
+        preview_checkbox = QCheckBox("Preview (dry-run)")
+        dlg.setCheckBox(preview_checkbox)
+        dlg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        ret = dlg.exec()
+        if ret != QMessageBox.Ok:
+            return
+
+        if preview_checkbox.isChecked():
+            # Run preview synchronously (quick scan) and show summary
+            summary = backend.preview_clean_metadata()
+            text_lines = [
+                f"VOD .strm files found: {summary.get('vod_files_found', 0)}",
+                f"VOD items with removable metadata: {summary.get('vod_items_with_metadata', 0)}",
+                f"Sample VOD IDs: {', '.join(map(str, summary.get('vod_sample_ids', []))) or 'None'}",
+                "",
+                f"Episode .strm files found: {summary.get('episode_files_found', 0)}",
+                f"Episode items with removable metadata: {summary.get('episode_items_with_metadata', 0)}",
+                f"Sample Episode IDs: {', '.join(map(str, summary.get('episode_sample_ids', []))) or 'None'}",
+                "",
+                f"Series rows checked: {summary.get('series_items_checked', 0)}",
+                f"Series rows with removable metadata: {summary.get('series_items_with_metadata', 0)}",
+                f"Sample Series IDs: {', '.join(map(str, summary.get('series_sample_ids', []))) or 'None'}",
+            ]
+            QMessageBox.information(self, "Clean Preview", "\n".join(text_lines))
+            return
+
+        # Final confirmation since this will modify the DB
+        confirm = QMessageBox.question(self, "Confirm clean + VACUUM", "Proceed to remove metadata and VACUUM the database? This cannot be undone.", QMessageBox.Yes | QMessageBox.No)
+        if confirm != QMessageBox.Yes:
+            return
+
+        # Run the long-running task in background
+        self.run_task(backend.run_clean_and_vacuum)
+
+    def on_backup_retention_changed(self, val: int):
+        try:
+            backend.save_preference('backup_retention', int(val))
+            self.statusBar().showMessage(f"Backup retention set to {val}", 3000)
+        except Exception:
+            self.statusBar().showMessage("Failed to save backup retention preference", 5000)
 
     @Slot(str)
     def update_status(self, message):

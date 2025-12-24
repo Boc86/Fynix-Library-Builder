@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import os
 import re
+import helpers.clean_metadata as clean_metadata
 import helpers.config_manager as config_manager
 from helpers.create_nfo_files import create_single_nfo_file # Import the new function
 
@@ -152,6 +153,12 @@ def create_strm_files() -> bool:
                 
                 # Create corresponding .nfo file
                 create_single_nfo_file(stream_dict, filename_base, movies_path)
+
+                # Clean DB metadata for this VOD stream to keep minimal data set
+                try:
+                    clean_metadata.clean_for_vod_stream(stream_id)
+                except Exception:
+                    logger.exception(f"Failed to run post-create metadata clean for stream {stream_id}")
 
             except Exception as e:
                 logger.error(f"Error creating .strm file for {original_name} ({stream_id}): {e}", exc_info=True)
