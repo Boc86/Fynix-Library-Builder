@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Define GitHub repository URL
-REPO_URL="https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/main"
+# Define GitHub repository URL (Dev branch)
+REPO_URL="https://raw.githubusercontent.com/Boc86/Fynix-Library-Builder/Dev"
 
 # Create installation directory
 INSTALL_DIR="$HOME/.fynix-library-builder"
@@ -26,6 +26,7 @@ wget -O "$INSTALL_DIR/helpers/create_nfo_files.py" "$REPO_URL/helpers/create_nfo
 wget -O "$INSTALL_DIR/helpers/create_series_nfo_files.py" "$REPO_URL/helpers/create_series_nfo_files.py"
 wget -O "$INSTALL_DIR/helpers/create_series_strm_files.py" "$REPO_URL/helpers/create_series_strm_files.py"
 wget -O "$INSTALL_DIR/helpers/create_strm_files.py" "$REPO_URL/helpers/create_strm_files.py"
+wget -O "$INSTALL_DIR/helpers/clean_metadata.py" "$REPO_URL/helpers/clean_metadata.py"
 wget -O "$INSTALL_DIR/helpers/defaultepggrabber.py" "$REPO_URL/helpers/defaultepggrabber.py"
 wget -O "$INSTALL_DIR/helpers/scheduled_update.py" "$REPO_URL/helpers/scheduled_update.py"
 wget -O "$INSTALL_DIR/helpers/setupdb.py" "$REPO_URL/helpers/setupdb.py"
