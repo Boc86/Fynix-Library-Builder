@@ -100,16 +100,11 @@ def get_series(db_path):
     conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    # Only select series that have episodes which are not marked as .strm = 'yes'
+    # Select all series to fetch metadata and episodes
     cursor.execute(
         """
         SELECT s.series_id, s.server_id, s.last_modified
         FROM series s
-        WHERE EXISTS (
-            SELECT 1 FROM episodes e
-            WHERE e.series_id = s.series_id
-              AND (e.strm IS NULL OR LOWER(e.strm) != 'yes')
-        )
         """
     )
     series = cursor.fetchall()
@@ -264,6 +259,9 @@ def process_series(db_path, index, series_tuple, total_series):
         episodes_data = metadata.get("episodes", {})
         if isinstance(episodes_data, dict):
             for season_num, episodes_list in episodes_data.items():
+                if not isinstance(episodes_list, list):
+                    logger.warning(f"Episodes for season {season_num} in series {series_id} is not a list, skipping.")
+                    continue
                 for episode in episodes_list:
                     if not isinstance(episode, dict):
                         logger.warning(f"Skipping non-dictionary episode item in series {series_id}: {episode}")
@@ -272,7 +270,49 @@ def process_series(db_path, index, series_tuple, total_series):
                     info = episode.get("info", {})
                     if not isinstance(info, dict):
                         info = {}
+                    if "id" in episode and episode["id"] not in existing_episode_ids:
+                        video_codec = episode.get("video", {}).get("codec_name", "")
+                        audio_channels = episode.get("audio", {}).get("channels", "")
 
+                        params = (
+                            server_id,
+                            series_id,
+                            int(season_num), # Ensure season_num is int
+                            episode["id"],
+                            episode.get("title", ""),
+                            info.get("plot", ""),
+                            episode.get("duration", ""),
+                            info.get("air_date", ""),
+                            episode.get("container_extension", ""),
+                            episode.get("episode_num", 0),
+                            info.get("rating", 0),
+                            info.get("crew", ""),
+                            str(info.get("id", "")),
+                            info.get("movie_image", ""),
+                            info.get("duration_secs", 0),
+                            video_codec,
+                            audio_channels,
+                            episode.get("bitrate", 0),
+                            episode.get("custom_sid", ""),
+                            episode.get("added", ""),
+                            episode.get("direct_source", ""),
+                            episode.get("season", int(season_num)) # Ensure season is int
+                        )
+                        episodes_to_insert.append(params)
+        elif isinstance(episodes_data, list):
+            for season_idx, episodes_list in enumerate(episodes_data, 1):
+                season_num = season_idx
+                if not isinstance(episodes_list, list):
+                    logger.warning(f"Episodes for season {season_num} in series {series_id} is not a list, skipping.")
+                    continue
+                for episode in episodes_list:
+                    if not isinstance(episode, dict):
+                        logger.warning(f"Skipping non-dictionary episode item in series {series_id}: {episode}")
+                        continue
+                    
+                    info = episode.get("info", {})
+                    if not isinstance(info, dict):
+                        info = {}
                     if "id" in episode and episode["id"] not in existing_episode_ids:
                         video_codec = episode.get("video", {}).get("codec_name", "")
                         audio_channels = episode.get("audio", {}).get("channels", "")
@@ -303,7 +343,7 @@ def process_series(db_path, index, series_tuple, total_series):
                         )
                         episodes_to_insert.append(params)
         else:
-            logger.warning(f"Episodes data for series {series_id} is not a dictionary, skipping episode processing.")
+            logger.warning(f"Episodes data for series {series_id} is neither dict nor list, skipping episode processing.")
 
         if episodes_to_insert:
             conn = sqlite3.connect(db_path, timeout=30)
