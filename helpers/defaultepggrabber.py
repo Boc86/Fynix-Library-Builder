@@ -52,7 +52,10 @@ def test_server_connection(url):
 
 def fetch_epg_xml(url):
     try:
-        resp = requests.get(url, timeout=60, verify=False)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        resp = requests.get(url, headers=headers, timeout=60, verify=False)
         resp.raise_for_status()
         return resp.content
     except RequestException as e:

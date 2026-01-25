@@ -77,11 +77,44 @@ class FynixPlayerWindow(QMainWindow):
         self.update_statistics_ui() # Initial update
         self.load_and_set_schedule() # Load schedule and start timer
 
-        # Run database migrations
-        if backend.check_for_missing_tables():
-            self.run_task(backend.migrate_database)
-        if not backend.check_live_streams_visible_column_exists():
-            self.run_task(backend.migrate_add_visible_column_to_live_streams)
+        # Run database migrations and migration checks
+        self.run_migration_checks()
+
+    def run_migration_checks(self):
+        """Run required DB migrations and perform a dry-run to detect existing .strm files.
+
+        This method keeps existing migration behavior and also calls the
+        helpers.migrate_add_strm.migrate_mark_strm(dry_run=True) to report
+        any .strm files that already exist on disk so the user can apply
+        the migration if desired.
+        """
+        # Existing migrations
+        try:
+            if backend.check_for_missing_tables():
+                self.run_task(backend.migrate_database)
+            if not backend.check_live_streams_visible_column_exists():
+                self.run_task(backend.migrate_add_visible_column_to_live_streams)
+            if not backend.check_strm_columns_exist():
+                self.run_task(backend.migrate_add_strm_columns)
+        except Exception as e:
+            # If a migration task fails, show message but continue to attempt the strm dry-run
+            self.statusBar().showMessage(f"DB migration error: {e}", 8000)
+
+        # Run the strm migration helper in dry-run mode to detect matches
+        try:
+            import helpers.migrate_add_strm as migrate_add_strm
+            summary = migrate_add_strm.migrate_mark_strm(dry_run=True)
+            movies_found = summary.get("movies_found", 0)
+            episodes_found = summary.get("episodes_found", 0)
+            if movies_found or episodes_found:
+                self.statusBar().showMessage(
+                    f"Migration: found {movies_found} movie and {episodes_found} episode .strm matches (dry-run)",
+                    10000
+                )
+            else:
+                self.statusBar().showMessage("Migration: no existing .strm files detected", 5000)
+        except Exception as e:
+            self.statusBar().showMessage(f"Migration check failed: {e}", 8000)
 
     def build_dashboard_tab(self):
         dashboard_widget = QWidget()

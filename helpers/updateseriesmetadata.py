@@ -48,7 +48,10 @@ def fetch_series_metadata(server, series_id):
             
             start_time = time.time()
             logger.info(f"Fetching metadata for series_id {series_id} (Attempt {i+1}/{retries}). URL: {url}")
-            response = requests.get(url, timeout=30, verify=False)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=30, verify=False)
             end_time = time.time()
             
             response_size = len(response.content)
@@ -94,16 +97,27 @@ def save_cache(series_id, data):
         logger.warning(f"Failed to save cache for series_id {series_id}: {e}")
 
 def get_series(db_path):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT series_id, server_id, last_modified FROM series")
+    # Only select series that have episodes which are not marked as .strm = 'yes'
+    cursor.execute(
+        """
+        SELECT s.series_id, s.server_id, s.last_modified
+        FROM series s
+        WHERE EXISTS (
+            SELECT 1 FROM episodes e
+            WHERE e.series_id = s.series_id
+              AND (e.strm IS NULL OR LOWER(e.strm) != 'yes')
+        )
+        """
+    )
     series = cursor.fetchall()
     conn.close()
     return series
 
 def get_server_info(db_path, server_id):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM servers WHERE id=?", (server_id,))
@@ -143,11 +157,27 @@ def update_series(db_path, series_id, metadata):
     params.append(series_id)
     sql_query = f"UPDATE series SET {', '.join(set_clauses)} WHERE series_id=?"
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA journal_mode=WAL")
     cursor = conn.cursor()
-    cursor.execute(sql_query, params)
-    conn.commit()
+    # Retry on database locked errors
+    retries = 5
+    delay = 0.1
+    for attempt in range(retries):
+        try:
+            cursor.execute(sql_query, params)
+            conn.commit()
+            break
+        except sqlite3.OperationalError as e:
+            if 'locked' in str(e).lower() and attempt < retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            else:
+                conn.rollback()
+                conn.close()
+                raise
     conn.close()
     return cursor.rowcount
 
@@ -222,7 +252,7 @@ def process_series(db_path, index, series_tuple, total_series):
 
         # Fetch existing episode IDs for this series once
         existing_episode_ids = set()
-        conn_check = sqlite3.connect(db_path)
+        conn_check = sqlite3.connect(db_path, timeout=30)
         cursor_check = conn_check.cursor()
         cursor_check.execute("SELECT episode_id FROM episodes WHERE series_id=?", (series_id,))
         for row in cursor_check.fetchall():
@@ -276,32 +306,77 @@ def process_series(db_path, index, series_tuple, total_series):
             logger.warning(f"Episodes data for series {series_id} is not a dictionary, skipping episode processing.")
 
         if episodes_to_insert:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30)
+            conn.execute("PRAGMA busy_timeout = 30000")
             conn.execute("PRAGMA journal_mode=WAL")
             cursor = conn.cursor()
-            try:
-                cursor.executemany("""
-                    INSERT INTO episodes (
-                        server_id, series_id, season_num, episode_id, title, plot, duration, airdate,
-                        container_extension, episode_num, rating, crew, tmdb_id, movie_image, duration_secs,
-                        video, audio, bitrate, custom_sid, added, direct_source, season
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, episodes_to_insert)
-                conn.commit()
-                inserted_episodes = cursor.rowcount
-            except sqlite3.Error as e:
-                logger.error(f"SQLite error during batch episode insert for series_id {series_id}: {e}")
-                conn.rollback()
-            finally:
-                conn.close()
+            # Retry executemany on locked errors
+            retries = 5
+            delay = 0.1
+            for attempt in range(retries):
+                try:
+                    cursor.executemany("""
+                        INSERT INTO episodes (
+                            server_id, series_id, season_num, episode_id, title, plot, duration, airdate,
+                            container_extension, episode_num, rating, crew, tmdb_id, movie_image, duration_secs,
+                            video, audio, bitrate, custom_sid, added, direct_source, season
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, episodes_to_insert)
+                    conn.commit()
+                    inserted_episodes = cursor.rowcount
+                    break
+                except sqlite3.OperationalError as e:
+                    logger.error(f"SQLite operational error during batch insert for series_id {series_id}: {e}")
+                    conn.rollback()
+                    if 'locked' in str(e).lower() and attempt < retries - 1:
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    else:
+                        break
+                except sqlite3.Error as e:
+                    logger.error(f"SQLite error during batch episode insert for series_id {series_id}: {e}")
+                    conn.rollback()
+                    break
+            conn.close()
 
         # Update the last_modified timestamp in the series table
         if updated_series > 0 or inserted_episodes > 0:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("UPDATE series SET last_modified = ? WHERE series_id = ?", (int(datetime.now().timestamp()), series_id))
-            conn.commit()
-            conn.close()
+            # Update last_modified with retries to avoid locked errors
+            retries = 5
+            delay = 0.1
+            for attempt in range(retries):
+                try:
+                    conn = sqlite3.connect(db_path, timeout=30)
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE series SET last_modified = ? WHERE series_id = ?", (int(datetime.now().timestamp()), series_id))
+                    conn.commit()
+                    conn.close()
+                    break
+                except sqlite3.OperationalError as e:
+                    if 'locked' in str(e).lower() and attempt < retries - 1:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    else:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        logger.error(f"Failed to update last_modified for series {series_id}: {e}")
+                        break
 
         logger.info(f"[{index}/{total_series}] Series {series_id} updated: {updated_series}, Episodes added: {inserted_episodes}")
     else:

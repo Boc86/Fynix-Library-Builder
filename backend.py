@@ -261,6 +261,86 @@ def migrate_add_visible_column_to_live_streams(progress_callback=None):
             conn.close()
 
 
+def check_strm_columns_exist():
+    """Checks if the 'strm' column exists in 'vod_streams', 'series', and 'episodes' tables."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(vod_streams);")
+        vod_columns = [row[1] for row in cursor.fetchall()]
+
+        cursor.execute("PRAGMA table_info(series);")
+        series_columns = [row[1] for row in cursor.fetchall()]
+
+        cursor.execute("PRAGMA table_info(episodes);")
+        episodes_columns = [row[1] for row in cursor.fetchall()]
+
+        return ('strm' in vod_columns) and ('strm' in series_columns) and ('strm' in episodes_columns)
+    except sqlite3.Error as e:
+        logging.error(f"Error checking 'strm' columns: {e}")
+        return True  # Assume present to avoid accidental migration on error
+    finally:
+        if conn:
+            conn.close()
+
+
+def migrate_add_strm_columns(progress_callback=None):
+    """Adds the 'strm' TEXT column to 'vod_streams' and 'series' tables if missing."""
+    if progress_callback:
+        progress_callback("Checking for 'strm' columns in tables...")
+
+    if check_strm_columns_exist():
+        if progress_callback:
+            progress_callback("'strm' columns already exist.")
+        return True
+
+    conn = None
+    try:
+        if progress_callback:
+            progress_callback("Adding 'strm' column to tables...")
+
+        conn = sqlite3.connect(DB_FILEPATH)
+        cursor = conn.cursor()
+
+        # Add column to vod_streams if missing
+        try:
+            cursor.execute("ALTER TABLE vod_streams ADD COLUMN strm TEXT;")
+            logging.info("Added 'strm' column to 'vod_streams' table.")
+        except sqlite3.Error as e:
+            logging.warning(f"Could not add 'strm' to 'vod_streams' (may already exist): {e}")
+
+        # Add column to series if missing
+        try:
+            cursor.execute("ALTER TABLE series ADD COLUMN strm TEXT;")
+            logging.info("Added 'strm' column to 'series' table.")
+        except sqlite3.Error as e:
+            logging.warning(f"Could not add 'strm' to 'series' (may already exist): {e}")
+
+        # Add column to episodes if missing
+        try:
+            cursor.execute("ALTER TABLE episodes ADD COLUMN strm TEXT;")
+            logging.info("Added 'strm' column to 'episodes' table.")
+        except sqlite3.Error as e:
+            logging.warning(f"Could not add 'strm' to 'episodes' (may already exist): {e}")
+
+        conn.commit()
+        if progress_callback:
+            progress_callback("'strm' columns added successfully!")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Error adding 'strm' columns: {e}")
+        if progress_callback:
+            progress_callback(f"Failed to add 'strm' columns: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
 # --- Database Interaction Functions ---
 def get_servers():
     """Retrieves all servers from the database."""
@@ -448,7 +528,7 @@ def run_initial_setup(server_details, movie_path, series_path, live_tv_path, pro
         ("Adding server information", lambda: addserver.add_iptv_server(DB_FILEPATH, server_name, server_url, server_username, server_password, server_port)),
         ("Updating categories", updatecats.main),
         ("Updating live streams", updatelive.main),
-        ("Grabbing EPG data", defaultepggrabber.main),
+        #("Grabbing EPG data", defaultepggrabber.main),
         ("Updating movies", updatemovies.main),
         ("Updating series", updateseries.main),
         ("Updating movie metadata", updatemoviemetadata.main),

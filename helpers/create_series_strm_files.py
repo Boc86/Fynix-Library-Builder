@@ -148,12 +148,6 @@ def create_series_strm_files() -> bool:
                         # Create corresponding .nfo file for the episode
                         create_single_episode_nfo_file(episode_data, episode_filename_base, current_season_path, sanitized_series_name)
 
-                        # Clean DB metadata for this episode to keep minimal dataset
-                        try:
-                            clean_metadata.clean_for_episode(episode_id)
-                        except Exception:
-                            logger.exception(f"Failed to run post-create metadata clean for episode {episode_id}")
-
                     except Exception as e:
                         logger.error(f"Error creating .strm file for episode {episode_title} ({episode_id}): {e}", exc_info=True)
                         # Continue to next episode even if one fails

@@ -17,6 +17,75 @@ def vacuum_database():
     conn = None # Initialize conn
     try:
         conn = sqlite3.connect(DB_PATH)
+
+        # Clean large, non-essential metadata from tables to reduce DB size
+        try:
+            logger.info("Removing non-essential metadata from vod_streams and episodes...")
+            cur = conn.cursor()
+
+            # Clear large image/text fields from vod_streams while keeping identifiers
+            # Clear large fields from vod_streams to minimize DB size; keep ids and tmdb
+            cur.execute(
+                """
+                UPDATE vod_streams SET
+                    stream_icon = NULL,
+                    rating = NULL,
+                    rating_5based = NULL,
+                    container_extension = NULL,
+                    custom_sid = NULL,
+                    direct_source = NULL,
+                    plot = NULL,
+                    cast = NULL,
+                    director = NULL,
+                    genre = NULL,
+                    release_date = NULL,
+                    duration_secs = NULL,
+                    duration = NULL,
+                    video_quality = NULL,
+                    o_name = NULL,
+                    cover_big = NULL,
+                    movie_image = NULL,
+                    youtube_trailer = NULL,
+                    actors = NULL,
+                    description = NULL,
+                    age = NULL,
+                    country = NULL,
+                    backdrop_path = NULL,
+                    bitrate = NULL,
+                    status = NULL,
+                    runtime = NULL,
+                    clearlogo = NULL
+                """
+            )
+            vod_updated = cur.rowcount
+
+            # Clear large fields from episodes while retaining ids and basic info
+            cur.execute(
+                """
+                UPDATE episodes SET
+                    plot = NULL,
+                    duration = NULL,
+                    airdate = NULL,
+                    container_extension = NULL,
+                    rating = NULL,
+                    crew = NULL,
+                    movie_image = NULL,
+                    duration_secs = NULL,
+                    video = NULL,
+                    audio = NULL,
+                    bitrate = NULL,
+                    custom_sid = NULL,
+                    direct_source = NULL
+                """
+            )
+            episodes_updated = cur.rowcount
+
+            conn.commit()
+            logger.info(f"Cleared metadata: vod_streams rows updated={vod_updated}, episodes rows updated={episodes_updated}")
+        except Exception as e:
+            logger.warning(f"Failed to clear metadata before VACUUM: {e}")
+
+        # Perform VACUUM to reclaim space after deletions
         conn.execute("VACUUM")
         conn.close()
         size_after = get_db_size(DB_PATH)

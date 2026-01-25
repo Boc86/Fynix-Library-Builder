@@ -154,6 +154,17 @@ def create_strm_files() -> bool:
                 # Create corresponding .nfo file
                 create_single_nfo_file(stream_dict, filename_base, movies_path)
 
+                # Mark the stream as having a .strm file in the database
+                try:
+                    conn_upd = sqlite3.connect(DB_PATH)
+                    cur_upd = conn_upd.cursor()
+                    cur_upd.execute("UPDATE vod_streams SET strm = 'yes' WHERE stream_id = ?", (stream_id,))
+                    conn_upd.commit()
+                    conn_upd.close()
+                    logger.debug(f"Updated vod_streams.strm for stream_id {stream_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to update vod_streams.strm for {stream_id}: {e}")
+
                 # Clean DB metadata for this VOD stream to keep minimal data set
                 try:
                     clean_metadata.clean_for_vod_stream(stream_id)

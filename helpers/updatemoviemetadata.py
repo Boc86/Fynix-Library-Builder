@@ -50,7 +50,10 @@ def fetch_metadata_from_api(server, stream_id):
             url = f"{base_url}/player_api.php?username={server['username']}&password={server['password']}&action=get_vod_info&vod_id={stream_id}"
             
             logger.debug(f"Attempt {i+1}/{retries} to fetch metadata for stream_id {stream_id} from {url}")
-            response = requests.get(url, timeout=30, verify=False)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=30, verify=False)
             response.raise_for_status()
             
             json_response = response.json()
@@ -98,7 +101,10 @@ def get_movies(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT stream_id, server_id FROM vod_streams WHERE tmdb_id IS NULL OR tmdb_id=''")
+    # Only select movies that are missing TMDB and are not already exported as .strm
+    cursor.execute(
+        "SELECT stream_id, server_id FROM vod_streams WHERE (tmdb_id IS NULL OR tmdb_id='') AND (strm IS NULL OR LOWER(strm) != 'yes')"
+    )
     movies = cursor.fetchall()
     conn.close()
     return movies
