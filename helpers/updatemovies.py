@@ -440,7 +440,7 @@ class XtreamVODStreamsDownloader:
                 except Exception:
                     added = None
             
-            container_extension = stream_data.get('container_extension', '')
+            container_extension = stream_data.get('container_extension') or ''
             custom_sid = stream_data.get('custom_sid', '')
             direct_source = stream_data.get('direct_source', '')
             plot = stream_data.get('plot', '')

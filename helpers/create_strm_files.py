@@ -143,6 +143,11 @@ def create_strm_files() -> bool:
             elif not processed_server_url.startswith("http://"):
                 processed_server_url = "http://" + processed_server_url
 
+            # Ensure container_extension is not None or empty, default to 'mp4'
+            if not container_extension:
+                container_extension = 'mp4'
+                logger.debug(f"Using default container extension 'mp4' for stream {stream_id}")
+
             # Example: http://serveraddress:port/movie/username/password/stream_id.container_extension
             full_stream_url = f"{processed_server_url}:{server_port}/movie/{server_username}/{server_password}/{stream_id}.{container_extension}"
             

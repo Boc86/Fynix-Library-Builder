@@ -8,3 +8,4 @@ fynix_library_builder.log
 preferences.json
 temp_run_update.py
 errors.txt
+fix_strm_files.py
